@@ -124,6 +124,9 @@ entity gs4510 is
   
     no_hyppo : in std_logic;
 
+    sdram_t_or_hyperram_f : out boolean;
+    sdram_slow_clock : out std_logic := '1';
+    
     reg_isr_out : in unsigned(7 downto 0);
     imask_ta_out : in std_logic;
 
@@ -285,6 +288,9 @@ end entity gs4510;
 
 architecture Behavioural of gs4510 is
 
+  signal sdram_t_or_hyperram_f_int : std_logic := '1';
+  signal sdram_slow_clock_int : std_logic := '1';
+  
   signal f_rdata : std_logic := '1';
   signal f_rdata_last : std_logic := '1';
   
@@ -2990,7 +2996,9 @@ begin
               value(1) := ocean_cart_mode;
               value(2) := slow_cache_enable;
               value(3) := slow_cache_advance_enable;
-              value(6 downto 3) := (others => '0');
+              value(4) := sdram_t_or_hyperram_f_int;
+              value(5) := sdram_slow_clock_int;
+              value(6) := '0';
               value(7) := trng_enable;
               return value;
             when x"ff" =>
@@ -3489,7 +3497,15 @@ begin
           power_down <= value(0);
         elsif (long_address = x"FFD27FE") or (long_address = x"FFD37FE") then
           -- @IO:GS $D7FE.0 CPU:PREFETCH Enable expansion RAM pre-fetch logic
+          -- @IO:GS $D7FE.4 CPU:SELSDRAM Selects SDRAM instead of HyperRAM for Attic RAM where available
+          -- @IO:GS $D7FE.5 CPU:SLOWSDRAM Selects slow (81MHz) SDRAM clock
           slow_prefetch_enable <= value(0);
+          slow_cache_enable <= value(2);
+          slow_cache_advance_enable <= value(3);
+          sdram_t_or_hyperram_f_int <= value(4);
+          sdram_slow_clock_int <= value(5);
+          sdram_slow_clock <= value(5);
+          
           -- @IO:GS $D7FE.1 CPU:OCEANA Enable Ocean Type A cartridge emulation
           ocean_cart_mode <= value(1);        
         elsif long_address(7 downto 0) = x"FF" then
@@ -4005,6 +4021,12 @@ begin
 
     if rising_edge(clock) then
 
+      if sdram_t_or_hyperram_f_int = '1' then
+        sdram_t_or_hyperram_f <= true;
+      else
+        sdram_t_or_hyperram_f <= false;
+      end if;
+      
       -- q_negated and friends have a total latency of at least 2 cycles,
       -- so that a NEG NEG NEG sequence doesn't process the result of the
       -- first NEG while executing the 3rd one which will act on the 32-bit
