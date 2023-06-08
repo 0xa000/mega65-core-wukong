@@ -1522,7 +1522,7 @@ architecture Behavioural of gs4510 is
   signal trng_consume_toggle_last : std_logic := '0';
   signal next_trng : unsigned(7 downto 0) := x"04"; -- a very random number initially
   signal trng_valid : std_logic;
-  signal trng_enable : std_logic;
+  signal trng_enable : std_logic := '0';
   signal trng_out : unsigned(7 downto 0);
 
   signal cache_readback_sel : integer := 0;
@@ -1561,19 +1561,19 @@ begin
 
   monitor_cpuport <= cpuport_value(2 downto 0);
 
-  trng0: entity work.neoTRNG generic map (
-    NUM_CELLS => 3,
-    NUM_INV_START => 5,
-    NUM_INV_INC => 2,
-    NUM_INV_DELAY => 2,
-    POST_PROC_EN => true,
-    IS_SIM => false )
-    port map (
-      clk_i => clock,
-      enable_i => trng_enable,
-      unsigned(data_o) => trng_out,
-      valid_o => trng_valid
-      );
+  --trng0: entity work.neoTRNG generic map (
+  --  NUM_CELLS => 3,
+  --  NUM_INV_START => 5,
+  --  NUM_INV_INC => 2,
+  --  NUM_INV_DELAY => 2,
+  --  POST_PROC_EN => true,
+  --  IS_SIM => false )
+  --  port map (
+  --    clk_i => clock,
+  --    enable_i => trng_enable,
+  --    unsigned(data_o) => trng_out,
+  --    valid_o => trng_valid
+  --    );
   
   fd0: entity work.fast_divide
     port map (
@@ -2950,10 +2950,11 @@ begin
                           
             when x"ef" =>
               -- @IO:GS $D7EF CPU:HWRNG!RAND Hardware Real RNG random number (reading triggers generation)
-              if trng_consume_toggle = trng_consume_toggle_last then
-                trng_consume_toggle <= not trng_consume_toggle;
-              end if;
+              --if trng_consume_toggle = trng_consume_toggle_last then
+              --  trng_consume_toggle <= not trng_consume_toggle;
+              --end if;
               return next_trng;
+
             when x"f0" =>
               return reg_cycle_counter;
                           
@@ -4047,14 +4048,14 @@ begin
       end if;
       
       -- Run TRNG to generate next byte when previous byte has been consumed
-      if trng_consume_toggle /= trng_consume_toggle_last then
-        trng_enable <= '1';
-        if trng_valid = '1' then
-          next_trng <= trng_out;
-          trng_consume_toggle_last <= trng_consume_toggle;
-          trng_enable <= '0';
-        end if;
-      end if;
+      --if trng_consume_toggle /= trng_consume_toggle_last then
+      --  trng_enable <= '1';
+      --  if trng_valid = '1' then
+      --    next_trng <= trng_out;
+      --    trng_consume_toggle_last <= trng_consume_toggle;
+      --    trng_enable <= '0';
+      --  end if;
+      --end if;
       
       if sid_sample_counter /= 918 then
         sid_sample_counter <= sid_sample_counter + 1;
