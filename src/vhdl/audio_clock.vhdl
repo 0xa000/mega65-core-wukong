@@ -27,7 +27,7 @@ entity audio_clock is
         ratio   : integer   -- clk to fs frequency ratio
     );
     port (
-
+      select_44100 : in std_logic;
         rsti    : in    std_logic;          -- reset in
         clki    : in    std_logic;          -- reference clock in
         rsto    : out   std_logic;          -- reset out (from MMCM lock status)
