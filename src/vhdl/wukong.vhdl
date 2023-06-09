@@ -179,8 +179,9 @@ architecture Behavioral of container is
   signal clock100 : std_logic;
   signal clock135p : std_logic;
   signal clock135n : std_logic;
-  signal clock135n2 : std_logic;
+  signal clock270 : std_logic;
   signal clock162 : std_logic;
+  signal clock200 : std_logic;
   signal clock324 : std_logic;
 
   -- XXX Actually connect to new keyboard
@@ -260,7 +261,9 @@ architecture Behavioral of container is
   signal pwm_r_drive : std_logic;
   signal pcspeaker_left_drive : std_logic;
 
-  signal flopled_drive : std_logic;
+  signal flopled0_drive : std_logic;
+  signal flopled2_drive : std_logic;
+  signal flopledsd_drive : std_logic;
   signal flopmotor_drive : std_logic;
 
   signal joy3 : std_logic_vector(4 downto 0);
@@ -467,8 +470,9 @@ begin
                  clock100  => clock100,   --  100     MHz
                  clock135p => clock135p,  --  135 MHz
                  clock135n => clock135n,  --  135 MHz inverted
-                 clock135n2 => clock135n2,  --  135 MHz inverted via another method
+                 clock270  => clock270,   --  270 MHz
                  clock162  => clock162,   -- 162    MHz
+                 clock200  => clock200,
                  clock324  => clock324    -- 324      MHz
                  );
 
@@ -479,6 +483,7 @@ begin
         fref        => 50.0
         )
         port map (
+            select_44100 => '0',
             ref_rst   => reset_high,
             ref_clk   => CLK_IN,
             pcm_rst   => pcm_rst,
@@ -497,9 +502,8 @@ begin
     pcm_cts <= std_logic_vector(to_unsigned(27000,pcm_cts'length));
     
     hdmi0: entity work.vga_to_hdmi
-      generic map (pcm_fs => 48.0 -- 48.0KHz audio
-                   )
       port map (
+        select_44100 => '0', -- 48.0 kHz audio
         dvi => '0',   -- Enable HDMI-style audio
         vic => std_logic_vector(to_unsigned(17,8)), -- CEA/CTA VIC 17=576p50 PAL, 2 = 480p60 NTSC
         aspect => "01", -- 01=4:3, 10=16:9
@@ -534,9 +538,7 @@ begin
     begin
         HDMI_DATA: entity work.serialiser_10to1_selectio
             port map (
-                rst     => reset_high,
-                clk     => clock27,
-                clk_x5  => clock135p,
+                clk_x10  => clock270,
                 d       => tmds(i),
                 out_p   => TMDS_data_p(i),
                 out_n   => TMDS_data_n(i)
@@ -544,9 +546,7 @@ begin
     end generate GEN_HDMI_DATA;
     HDMI_CLK: entity work.serialiser_10to1_selectio
         port map (
-            rst     => reset_high,
-            clk     => clock27,
-            clk_x5  => clock135p,
+            clk_x10  => clock270,
             d       => "0000011111",
             out_p   => TMDS_clk_p,
             out_n   => TMDS_clk_n
@@ -569,7 +569,7 @@ begin
         disco_led_val => disco_led_val,
         
         powerled => '1',
-        flopled => flopled_drive,
+        flopled0 => flopled0_drive,
         flopmotor => flopmotor_drive,
             
 --      kio8 => kb_io0,
@@ -582,8 +582,11 @@ begin
         fastkey_out => fastkey,
         capslock_out => widget_capslock,
         upkey => keyup,
-        leftkey => keyleft
-      
+        leftkey => keyleft,
+
+        flopled2 => flopled2_drive,
+        flopledsd => flopledsd_drive,
+        eth_load_enable => '0'
         );
 
     slow_devices0: entity work.slow_devices
@@ -653,7 +656,7 @@ begin
   
   debug(0) <= clock27;
   debug(1) <= cpuclock;
-  debug(2) <= clock135n2;
+  debug(2) <= clock270;
   debug(3) <= clock135p;
   debug(4) <= clock135n;
 
@@ -698,7 +701,7 @@ begin
       cpuclock        => cpuclock,
       uartclock       => cpuclock, -- Match CPU clock
       clock162 => clock162,
-      clock100 => clock100,
+      clock200 => clock200,
       clock27 => clock27,
       clock50mhz      => ethclock,
 
@@ -850,7 +853,9 @@ begin
       disco_led_id => disco_led_id,
       disco_led_val => disco_led_val,      
       
-      flopled => flopled_drive,
+      flopled0 => flopled0_drive,
+      flopled2 => flopled2_drive,
+      flopledsd => flopledsd_drive,
       flopmotor => flopmotor_drive,
       ampPWM_l => pwm_l_drive,
       ampPWM_r => pwm_r_drive,
@@ -891,15 +896,21 @@ begin
       
       sw => (others => '0'),
 --      uart_rx => '1',
-      btn => (others => '1')
-         
+      btn => (others => '1'),
+
+      iec_srq_external => '0',
+      kbd_commit => (others => '0'),
+      kbd_datestamp => (others => '0'),
+      max10_fpga_commit => (others => '0'),
+      max10_fpga_date => (others => '0'),
+      qspidb_in => (others => '0')
       );
   end generate;
 
   process (pixelclock,cpuclock) is
   begin
     vdac_sync_n <= '0';  -- no sync on green
-    vdac_blank_n <= '1'; -- was: not (v_hsync or v_vsync); 
+    vdac_blank_n <= '1'; -- was: not (v_hsync or v_vsync);
 
     -- VGA output at full pixel clock
     vdac_clk <= pixelclock;
