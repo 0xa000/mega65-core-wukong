@@ -40,7 +40,7 @@ entity container is
 --         nmi : in  STD_LOGIC;
 
 
-         debug : out std_logic_vector(4 downto 0);
+         --debug : out std_logic_vector(4 downto 0);
          
          KEY1 : in std_logic;
          
@@ -52,6 +52,8 @@ entity container is
 --         kb_io0 : out std_logic;
 --         kb_io1 : out std_logic;
 --         kb_io2 : in std_logic;
+         porta_pins : inout std_logic_vector(7 downto 0);
+         portb_pins : in std_logic_vector(7 downto 0);
 
          ---------------------------------------------------------------------------
          -- IO lines to QSPI config flash (used so that we can update bitstreams)
@@ -62,14 +64,14 @@ entity container is
          ---------------------------------------------------------------------------
          -- Dummy VGA output for debug
          ---------------------------------------------------------------------------
-         vdac_clk : out std_logic;
-         vdac_sync_n : out std_logic; -- tie low
-         vdac_blank_n : out std_logic; -- tie high
-         vsync : out  STD_LOGIC;
-         hsync : out  STD_LOGIC;
-         vgared : out  UNSIGNED (7 downto 0);
-         vgagreen : out  UNSIGNED (7 downto 0);
-         vgablue : out  UNSIGNED (7 downto 0);
+         --vdac_clk : out std_logic;
+         --vdac_sync_n : out std_logic; -- tie low
+         --vdac_blank_n : out std_logic; -- tie high
+         --vsync : out  STD_LOGIC;
+         --hsync : out  STD_LOGIC;
+         --vgared : out  UNSIGNED (7 downto 0);
+         --vgagreen : out  UNSIGNED (7 downto 0);
+         --vgablue : out  UNSIGNED (7 downto 0);
 
          
          ---------------------------------------------------------------------------
@@ -192,8 +194,9 @@ architecture Behavioral of container is
   signal keyup : std_logic := '0';
   -- On the R2, we don't use the "real" keyboard interface, but instead the
   -- widget board interface, so just have these as dummy all-high place holders
-  signal column : std_logic_vector(8 downto 0) := (others => '1');
-  signal row : std_logic_vector(7 downto 0) := (others => '1');
+  --signal column : std_logic_vector(8 downto 0) := (others => '1');
+  --signal row : std_logic_vector(7 downto 0) := (others => '1');
+  signal column8 : std_logic := '1';
   
   
   signal segled_counter : unsigned(31 downto 0) := (others => '0');
@@ -654,11 +657,11 @@ begin
   green_s_n <= green_s;
   blue_s_n <= blue_s;
   
-  debug(0) <= clock27;
-  debug(1) <= cpuclock;
-  debug(2) <= clock270;
-  debug(3) <= clock135p;
-  debug(4) <= clock135n;
+  --debug(0) <= clock27;
+  --debug(1) <= cpuclock;
+  --debug(2) <= clock270;
+  --debug(3) <= clock135p;
+  --debug(4) <= clock135n;
 
   
   pd0: if false generate
@@ -759,9 +762,12 @@ begin
 --      buffereduart_rx => '1',
       buffereduart_ringindicate => (others => '0'),
 
-      porta_pins => column(7 downto 0),
-      portb_pins => row(7 downto 0),
-      keyboard_column8 => column(8),
+      --porta_pins => column(7 downto 0),
+      --portb_pins => row(7 downto 0),
+      --keyboard_column8 => column(8),
+      porta_pins => porta_pins,
+      portb_pins => portb_pins,
+      keyboard_column8 => column8,
       caps_lock_key => '1',
       keyleft => keyleft,
       keyup => keyup,
@@ -909,11 +915,11 @@ begin
 
   process (pixelclock,cpuclock) is
   begin
-    vdac_sync_n <= '0';  -- no sync on green
-    vdac_blank_n <= '1'; -- was: not (v_hsync or v_vsync);
+    --vdac_sync_n <= '0';  -- no sync on green
+    --vdac_blank_n <= '1'; -- was: not (v_hsync or v_vsync);
 
     -- VGA output at full pixel clock
-    vdac_clk <= pixelclock;
+    --vdac_clk <= pixelclock;
 
     -- HDMI output at 27MHz
 --    hdmi_clk <= clock27;
@@ -1066,11 +1072,11 @@ begin
 
     
     if rising_edge(pixelclock) then
-      hsync <= v_vga_hsync;
-      vsync <= v_vsync;
-      vgared <= v_red;
-      vgagreen <= v_green;
-      vgablue <= v_blue;
+      --hsync <= v_vga_hsync;
+      --vsync <= v_vsync;
+      --vgared <= v_red;
+      --vgagreen <= v_green;
+      --vgablue <= v_blue;
       hdmired <= v_red;
       hdmigreen <= v_green;
       hdmiblue <= v_blue;
