@@ -44,6 +44,19 @@ set_false_path -from [get_clocks ethclock] -to [get_clocks cpuclock];
 set_false_path -from [get_clocks clock324] -to [get_clocks clock162];
 set_false_path -from [get_clocks clock162] -to [get_clocks clock324];
 
+#create_generated_clock -name clock60  [get_pins d0.AUDIO_TONE/CLOCK/MMCM/CLKOUT1];
+
+# For timing analysis, we approximate the audio clock with a frequency of 60/4 = 15 MHz.
+# This is slightly over-constraining the design, but the difference is small enough to
+# not cause timing violations.
+#create_generated_clock -name clock12p228 -source [get_pins d0.AUDIO_TONE/CLOCK/MMCM/CLKOUT1] -divide_by 4 [get_pins d0.AUDIO_TONE/CLOCK/clk_u_reg/Q];
+
+create_generated_clock -name clock12p228 [get_pins d0.AUDIO_TONE/CLOCK/MMCM/CLKOUT0];
+
+# Fix 12.288MHz clock generation clock domain crossing
+#set_false_path -from [get_clocks cpuclock] -to [get_clocks clock60];
+set_false_path -from [get_clocks cpuclock] -to [get_clocks clock12p228];
+
 create_generated_clock -name clock1   -source [get_pins d0.clocks1/mmcm_adv0/CLKOUT3] -divide_by 41 [get_pins m0.machine0/pixel0/phi_1mhz_ubuf_reg/Q];
 create_generated_clock -name clock2   -source [get_pins d0.clocks1/mmcm_adv0/CLKOUT3] -divide_by 20 [get_pins m0.machine0/pixel0/phi_2mhz_ubuf_reg/Q];
 create_generated_clock -name clock3p5 -source [get_pins d0.clocks1/mmcm_adv0/CLKOUT3] -divide_by 10 [get_pins m0.machine0/pixel0/phi_3mhz_ubuf_reg/Q];
