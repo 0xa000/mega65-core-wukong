@@ -53,7 +53,7 @@ entity container is
 --         kb_io1 : out std_logic;
 --         kb_io2 : in std_logic;
          porta_pins : inout std_logic_vector(7 downto 0);
-         portb_pins : in std_logic_vector(7 downto 0);
+         portb_pins : inout std_logic_vector(7 downto 0);
 
          ---------------------------------------------------------------------------
          -- IO lines to QSPI config flash (used so that we can update bitstreams)
