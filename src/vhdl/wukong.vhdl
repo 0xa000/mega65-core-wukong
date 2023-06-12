@@ -391,11 +391,12 @@ architecture Behavioral of container is
   signal green_s_n : std_logic_vector(0 downto 0);
   signal blue_s_n  : std_logic_vector(0 downto 0);
   
-  constant clock_frequency : integer := 27000000;
+  constant clock_frequency : integer := 40500000;
   constant target_sample_rate : integer := 48000;
   signal audio_counter : integer := 0;
   signal sample_ready_toggle : std_logic := '0';
-  signal audio_counter_interval : unsigned(23 downto 0) := to_unsigned(clock_frequency/target_sample_rate,24);
+  signal audio_counter_interval : unsigned(25 downto 0) := to_unsigned(4*clock_frequency/target_sample_rate,26);
+  signal acr_counter : integer range 0 to 12288 := 0;
 
   signal pcm_clk : std_logic := '0';
   signal pcm_rst : std_logic := '1';
@@ -913,7 +914,9 @@ begin
       );
   end generate;
 
-  process (pixelclock,cpuclock) is
+  process (pixelclock,cpuclock,pcm_clk,
+           irq,irq_out,nmi,nmi_out,
+           audio_right,audio_left) is
   begin
     --vdac_sync_n <= '0';  -- no sync on green
     --vdac_blank_n <= '1'; -- was: not (v_hsync or v_vsync);
@@ -931,6 +934,17 @@ begin
     irq_combined <= irq and irq_out;
     nmi_combined <= nmi and nmi_out;
     
+    if rising_edge(pcm_clk) then
+      -- Generate 1KHz ACR pulse train from 12.288MHz
+      if acr_counter /= (12288 - 1) then
+        acr_counter <= acr_counter + 1;
+        pcm_acr <= '0';
+      else
+        pcm_acr <= '1';
+        acr_counter <= 0;
+      end if;
+    end if;
+
     -- Drive most ports, to relax timing
     if rising_edge(cpuclock) then
 
@@ -939,10 +953,19 @@ begin
       -- We need to pass audio to 12.288 MHz clock domain.
       -- Easiest way is to hold samples constant for 16 ticks, and
       -- have a slow toggle
-      if audio_counter /= to_integer(audio_counter_interval) then
-        audio_counter <= audio_counter + 1;
+      -- At 40.5MHz and 48KHz sample rate, we have a ratio of 843.75
+      -- Thus we need to calculate the remainder, so that we can get the
+      -- sample rate EXACTLY 48KHz.
+      -- Otherwise we end up using 844, which gives a sample rate of
+      -- 40.5MHz / 844 = 47.986KHz, which might just be enough to throw
+      -- some monitors out, since it means that the CTS / N rates will
+      -- be wrong.
+      -- (Or am I just chasing my tail, because this is only used to set the
+      -- rate at which we LATCH the samples?)
+      if audio_counter < to_integer(audio_counter_interval) then
+        audio_counter <= audio_counter + 4;
       else
-        audio_counter <= 0;
+        audio_counter <= audio_counter - to_integer(audio_counter_interval);
         sample_ready_toggle <= not sample_ready_toggle;
         audio_left_slow <= h_audio_left;
         audio_right_slow <= h_audio_right;
@@ -1033,7 +1056,7 @@ begin
     end if;
 
     h_audio_right <= audio_right;
-    h_audio_right <= audio_left;
+    h_audio_left <= audio_left;
     -- toggle signed/unsigned audio flipping
     if portp(7)='1' then
       h_audio_right(19) <= not audio_right(19);
