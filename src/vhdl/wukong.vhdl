@@ -649,7 +649,7 @@ begin
         -- Expansion RAM interface (upto 127MB)
         ----------------------------------------------------------------------
         expansionram_busy => '1',
-        expansionram_data_ready_strobe => '1'
+        expansionram_data_ready_toggle => '1'
         
         );
   end generate;
