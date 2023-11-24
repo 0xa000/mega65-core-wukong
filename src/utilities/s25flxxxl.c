@@ -3,102 +3,311 @@
 #include <stdio.h>
 
 #include "flash_memory.h"
-#include "qspicommon.h"
+#include "qspihwassist.h"
+#include "qspibitbash.h"
 
-struct s25flxxxl {
-    // const struct flash_memory_interface * interface;
-    const struct flash_memory_interface interface;
-    // attributes
-    unsigned char reg_sr1;
-    unsigned char reg_sr2;
+static unsigned char read_status_register_1(void)
+{
+    return spi_transaction_tx8rx8(0x05);
+}
+
+static unsigned char read_status_register_2(void)
+{
+    return spi_transaction_tx8rx8(0x07);
+}
+
+static unsigned char read_configuration_register_1(void)
+{
+    return spi_transaction_tx8rx8(0x35);
+}
+
+static unsigned char read_configuration_register_2(void)
+{
+    return spi_transaction_tx8rx8(0x15);
+}
+
+static unsigned char read_configuration_register_3(void)
+{
+    return spi_transaction_tx8rx8(0x33);
+}
+
+static void write_enable(void)
+{
+    spi_transaction_tx8(0x06);
+}
+
+static void clear_status_register(void)
+{
+    spi_transaction_tx8(0x30);
+}
+
+struct s25flxxxl_status
+{
+    unsigned char sr1;
+    unsigned char sr2;
 };
 
-static int s25flxxxl_reset(void * self) {
-//    struct s25flxxxl * _self = self;
+static struct s25flxxxl_status read_status(void)
+{
+    struct s25flxxxl_status status;
+    status.sr1 = read_status_register_1();
+    status.sr2 = read_status_register_2();
+    return status;
+}
+
+static BOOL erase_error_occurred(const struct s25flxxxl_status * status)
+{
+    return (status->sr2 & 0x40 ? TRUE : FALSE);
+}
+
+static BOOL program_error_occurred(const struct s25flxxxl_status * status)
+{
+    return (status->sr2 & 0x20 ? TRUE : FALSE);
+}
+
+static BOOL write_enabled(const struct s25flxxxl_status * status)
+{
+    return (status->sr1 & 0x02 ? TRUE : FALSE);
+}
+
+static BOOL write_in_progress(const struct s25flxxxl_status * status)
+{
+    return (status->sr1 & 0x01 ? TRUE : FALSE);
+}
+
+static BOOL busy(const struct s25flxxxl_status * status)
+{
+    return (status->sr1 & 0x03 ? TRUE : FALSE);
+}
+
+static BOOL error_occurred(const struct s25flxxxl_status * status)
+{
+    return (status->sr2 & 0x60 ? TRUE : FALSE);
+}
+
+static void clear_status(void)
+{
+    struct s25flxxxl_status status;
+    for (;;)
+    {
+        status = read_status();
+        if (!busy(&status) && !error_occurred(&status))
+            break;
+        clear_status_register();
+    }
+}
+
+static char wait_status(void)
+{
+    struct s25flxxxl_status status;
+    for (;;)
+    {
+        status = read_status();
+        if (!busy(&status))
+            break;
+    }
+    return (error_occurred(&status) ? -1 : 0);
+}
+
+struct s25flxxxl
+{
+    // Interface.
+    const struct flash_memory_interface interface;
+    // Attributes.
+    unsigned char read_latency_cycles;
+};
+
+static char s25flxxxl_reset(void * self)
+{
     (void) self;
 
     spi_cs_high();
+    spi_clock_high();
+
     usleep(10000);
 
     // Allow lots of clock ticks to get attention of SPI
-    spi_idle_clocks(256);
+    spi_idle_clocks(255);
 
-    spi_clock_high();
-    delay();
-    spi_cs_low();
-    delay();
+    // Reset enable.
+    spi_transaction_tx8(0x66);
 
-    spi_tx_byte(0x66); // Reset enable.
-    spi_cs_high();
-    delay();
-    spi_clock_high();
-    delay();
-    spi_cs_low();
-    delay();
-    spi_tx_byte(0x99); // Reset.
-    spi_cs_high();
+    // Reset.
+    spi_transaction_tx8(0x99);
+
     usleep(10000);
+    return 0;
+}
+
+static void volatile_write_enable(void)
+{
+    spi_transaction_tx8(0x50);
+}
+
+static char enable_quad_mode(void)
+{
+    unsigned char spi_tx[] = {0x01, 0x00, 0x00};
+
+    spi_tx[1] = read_status_register_1();
+    spi_tx[2] = read_configuration_register_1();
+    spi_tx[2] |= 0x02;
+
+    volatile_write_enable();
+    spi_transaction(spi_tx, 3, NULL, 0);
+    return wait_status();
+}
+
+static char s25flxxxl_probe(void * self, struct flash_memory_descriptor * descriptor)
+{
+    const uint8_t spi_tx[] = {0x9f};
+    uint8_t spi_rx[] = {0x00, 0x00, 0x00};
+    unsigned char cr1, cr2, cr3;
+    BOOL quad_mode_enabled;
+    struct s25flxxxl * self_ = (struct s25flxxxl *) self;
+
+    if (s25flxxxl_reset(self) != 0)
+        return -1;
+
+    // Read RDID to confirm model and get density.
+    spi_transaction(spi_tx, 1, spi_rx, 3);
+    if (spi_rx[0] != 0x01 || spi_rx[1] != 0x60)
+        return -1;
+
+    descriptor->manufacturer = "Infineon";
+    if (spi_rx[2] == 0x18)
+        // 128 Mb
+        descriptor->memory_size_mb = 16;
+    else if (spi_rx[2] == 0x19)
+        // 256 Mb
+        descriptor->memory_size_mb = 32;
+    else
+        return -1;
+
+    descriptor->uniform_sector_sizes[flash_memory_sector_size_4k  ] = TRUE;
+    descriptor->uniform_sector_sizes[flash_memory_sector_size_32k ] = TRUE;
+    descriptor->uniform_sector_sizes[flash_memory_sector_size_64k ] = TRUE;
+    descriptor->uniform_sector_sizes[flash_memory_sector_size_256k] = FALSE;
+
+    descriptor->page_size = flash_memory_page_size_256;
+
+    cr1 = read_configuration_register_1();
+    cr2 = read_configuration_register_2();
+    cr3 = read_configuration_register_3();
+
+    self_->read_latency_cycles = cr3 & 0x0f;
+
+    quad_mode_enabled = cr1 & 0x02;
+    if (!quad_mode_enabled)
+    {
+        if (enable_quad_mode() != 0)
+           return -1;
+        cr1 = read_configuration_register_1();
+        quad_mode_enabled = cr1 & 0x02;
+    }
+
+    if (!quad_mode_enabled)
+    {
+        return -1;
+    }
+
+    descriptor->read_latency_cycles = self_->read_latency_cycles;
+    descriptor->quad_mode_enabled = quad_mode_enabled;
+    descriptor->memory_array_protection_enabled = (cr2 & 0x04) || (cr1 & 0x3c);
+    descriptor->register_protection_enabled = cr1 & 0x01;
 
     return 0;
 }
 
-static int s25flxxxl_erase_sector(void * self, enum flash_memory_sector_size sector_size, unsigned long address) {
-
-    struct s25flxxxl * _self = self;
-
-    while ((_self->reg_sr1 & 0x01) || (_self->reg_sr2 & 0x60)) {
-        spi_cs_high();
-        spi_clock_high();
-        delay();
-        spi_cs_low();
-        delay();
-        spi_tx_byte(0x30);
-        spi_cs_high();
-        read_registers();
+static char s25flxxxl_read(void * self, unsigned long address, unsigned char * data)
+{
+    unsigned short i;
+    const struct s25flxxxl * self_ = (const struct s25flxxxl *) self;
+    clear_status();
+    spi_clock_high();
+    spi_cs_low();
+    spi_output_enable();
+    spi_tx_byte(0x6c);
+    spi_tx_byte(address >> 24);
+    spi_tx_byte(address >> 16);
+    spi_tx_byte(address >> 8);
+    spi_tx_byte(address >> 0);
+    spi_output_disable();
+    spi_idle_clocks(self_->read_latency_cycles);
+    if (data == NULL)
+    {
+        for (i = 0; i < 512; ++i)
+        {
+            qspi_rx_byte();
+        }
     }
-
-    spi_write_enable();
-
+    else
+    {
+        for (i = 0; i < 512; ++i)
+        {
+            data[i] = qspi_rx_byte();
+        }
+    }
     spi_cs_high();
     spi_clock_high();
-    delay();
-    spi_cs_low();
-    delay();
-    // if ((address >> 12) >= num_4k_sectors) {
-    if ((address >> 12) >= 16) {
-        // Do 64KB/256KB sector erase
-        printf("erasing large sector.\n");
-        POKE(0xD681, address >> 0);
-        POKE(0xD682, address >> 8);
-        POKE(0xD683, address >> 16);
-        POKE(0xD684, address >> 24);
-        // Erase large page
-        POKE(0xd680, 0x58);
-    }
-    else {
-        // Do fast 4KB sector erase
-        printf("erasing small sector.\n");
-        spi_tx_byte(0x21);
-        spi_tx_byte(address >> 24);
-        spi_tx_byte(address >> 16);
-        spi_tx_byte(address >> 8);
-        spi_tx_byte(address >> 0);
-        spi_clock_low();
-        spi_cs_high();
-        delay();
-    }
-
     return 0;
 }
 
-// static const struct flash_memory_interface _s25flxxxl = {
-//     sizeof(struct s25flxxxl), 0, 0, s25flxxxl_reset
-// };
+static char s25flxxxl_erase_sector(void * self, enum flash_memory_sector_size sector_size, unsigned long address)
+{
+    unsigned char spi_tx[5];
 
-// const void * s25flxxxl = & _s25flxxxl;
+    (void) self;
+
+    switch (sector_size)
+    {
+    case flash_memory_sector_size_4k:
+        spi_tx[0] = 0x21;
+        break;
+    case flash_memory_sector_size_32k:
+        spi_tx[0] = 0x53;
+        break;
+    case flash_memory_sector_size_64k:
+        spi_tx[0] = 0xdc;
+        break;
+    default:
+        return -1;
+    }
+
+    spi_tx[1] = address >> 24;
+    spi_tx[2] = address >> 16;
+    spi_tx[3] = address >> 8;
+    spi_tx[4] = address >> 0;
+
+    clear_status();
+    write_enable();
+    spi_transaction(spi_tx, 5, NULL, 0);
+    return wait_status();
+}
+
+static char s25flxxxl_program_page(void * self, unsigned long address, const unsigned char * data)
+{
+    unsigned short i = 0;
+
+    clear_status();
+    write_enable();
+    spi_clock_high();
+    spi_cs_low();
+    spi_output_enable();
+    spi_tx_byte(0x34);
+    spi_tx_byte(address >> 24);
+    spi_tx_byte(address >> 16);
+    spi_tx_byte(address >> 8);
+    spi_tx_byte(address >> 0);
+    for (i = 0; i < 256; ++i)
+        qspi_tx_byte(data[i]);
+    spi_output_disable();
+    spi_cs_high();
+    spi_clock_high();
+    return wait_status();
+}
 
 static struct s25flxxxl _s25flxxxl = {
-    {0, s25flxxxl_reset, s25flxxxl_erase_sector}
+    {s25flxxxl_reset, s25flxxxl_probe, s25flxxxl_read, s25flxxxl_erase_sector, s25flxxxl_program_page}
 };
 
 void * s25flxxxl = & _s25flxxxl;

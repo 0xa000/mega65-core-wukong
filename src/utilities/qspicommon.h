@@ -99,15 +99,8 @@ unsigned char flash_region_differs(unsigned long attic_addr, unsigned long flash
 void enable_quad_mode(void);
 char *get_model_name(uint8_t model_id);
 
-void spi_clock_low(void);
-void spi_clock_high(void);
-void spi_cs_low(void);
-void spi_cs_high(void);
 unsigned char read_joystick_input(void);
 void delay(void);
-void spi_tx_byte(unsigned char b);
-unsigned char qspi_rx_byte(void);
-unsigned char spi_rx_byte(void);
 void read_sr1(void);
 void read_ppb_for_sector(unsigned long sector_start);
 void read_ppbl(void);

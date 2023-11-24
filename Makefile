@@ -903,11 +903,21 @@ MFLASH_CORE_OBJ = \
 
 MFLASH_SOLO_H = \
 	$(UTILDIR)/mf_screens_solo.h \
-	$(MFLASH_BASE_H)
+	$(MFLASH_BASE_H) \
+	$(UTILDIR)/flash_memory.h \
+	$(UTILDIR)/s25flxxxl.h \
+	$(UTILDIR)/s25flxxxs.h \
+	$(UTILDIR)/qspihwassist.h \
+	$(UTILDIR)/qspibitbash.h
 
 MFLASH_SOLO_OBJ = \
 	$(UTILDIR)/mf_screens_solo.o \
-	$(MFLASH_BASE_OBJ)
+	$(MFLASH_BASE_OBJ) \
+	$(UTILDIR)/flash_memory.c \
+	$(UTILDIR)/s25flxxxl.c \
+	$(UTILDIR)/s25flxxxs.c \
+	$(UTILDIR)/qspihwassist.c \
+	$(UTILDIR)/qspibitbash.c
 
 MFLASH_CORE_REQ = $(MFLASH_QSPI_H) $(MFLASH_CORE_H) $(MFLASH_QSPI_C) $(MFLASH_CORE_OBJ)
 MFLASH_CORE_LINK = $(MFLASH_QSPI_C) $(MFLASH_CORE_OBJ)
