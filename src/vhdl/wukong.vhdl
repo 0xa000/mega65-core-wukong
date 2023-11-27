@@ -905,7 +905,8 @@ begin
       widget_capslock => widget_capslock,
       widget_joya => (others => '1'),
       widget_joyb => (others => '1'),      
-      
+
+      dipsw => "00100",
       sw => (others => '0'),
 --      uart_rx => '1',
       btn => (others => '1'),
