@@ -18,11 +18,18 @@ char flash_memory_reset(void * self) {
     return interface->reset(self);
 }
 
-char flash_memory_read(void * self, unsigned long address, unsigned char * data) {
+char flash_memory_read(void * self, unsigned long address, unsigned char * data, unsigned int size) {
     const struct flash_memory_interface * interface = self;
     if (interface == NULL || interface->read == NULL)
         return -1;
-    return interface->read(self, address, data);
+    return interface->read(self, address, data, size);
+}
+
+char flash_memory_verify(void * self, unsigned long address, unsigned char * data, unsigned int size) {
+    const struct flash_memory_interface * interface = self;
+    if (interface == NULL || interface->verify == NULL)
+        return -1;
+    return interface->verify(self, address, data, size);
 }
 
 char flash_memory_erase_sector(void * self, enum flash_memory_sector_size sector_size, unsigned long address) {

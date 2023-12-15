@@ -173,7 +173,7 @@ static char s25flxxxl_probe(void * self, struct flash_memory_descriptor * descri
     if (spi_rx[0] != 0x01 || spi_rx[1] != 0x60)
         return -1;
 
-    descriptor->manufacturer = "Infineon";
+    descriptor->manufacturer = "infineon";
     if (spi_rx[2] == 0x18)
         // 128 Mb
         descriptor->memory_size_mb = 16;
@@ -218,11 +218,10 @@ static char s25flxxxl_probe(void * self, struct flash_memory_descriptor * descri
     return 0;
 }
 
-static char s25flxxxl_read(void * self, unsigned long address, unsigned char * data)
+static char s25flxxxl_read(void * self, unsigned long address, unsigned char * data, unsigned int size)
 {
-    unsigned short i;
     const struct s25flxxxl * self_ = (const struct s25flxxxl *) self;
-    clear_status();
+
     spi_clock_high();
     spi_cs_low();
     spi_output_enable();
@@ -235,21 +234,72 @@ static char s25flxxxl_read(void * self, unsigned long address, unsigned char * d
     spi_idle_clocks(self_->read_latency_cycles);
     if (data == NULL)
     {
-        for (i = 0; i < 512; ++i)
+        unsigned int i;
+
+        for (i = 0; i < size; ++i)
         {
             qspi_rx_byte();
         }
     }
     else
     {
-        for (i = 0; i < 512; ++i)
+        unsigned int i;
+
+        for (i = 0; i < size; ++i)
         {
             data[i] = qspi_rx_byte();
         }
     }
     spi_cs_high();
     spi_clock_high();
+
     return 0;
+}
+
+static char s25flxxxl_verify(void * self, unsigned long address, unsigned char * data, unsigned int size)
+{
+    const struct s25flxxxl * self_ = (const struct s25flxxxl *) self;
+    char result = 0;
+
+    spi_clock_high();
+    spi_cs_low();
+    spi_output_enable();
+    spi_tx_byte(0x6c);
+    spi_tx_byte(address >> 24);
+    spi_tx_byte(address >> 16);
+    spi_tx_byte(address >> 8);
+    spi_tx_byte(address >> 0);
+    spi_output_disable();
+    spi_idle_clocks(self_->read_latency_cycles);
+    if (data == NULL)
+    {
+        unsigned int i;
+
+        for (i = 0; i < size; ++i)
+        {
+            if (qspi_rx_byte() != 0)
+            {
+                result = -1;
+                break;
+            }
+        }
+    }
+    else
+    {
+        unsigned int i;
+
+        for (i = 0; i < size; ++i)
+        {
+            if (qspi_rx_byte() != data[i])
+            {
+                result = -1;
+                break;
+            }
+        }
+    }
+    spi_cs_high();
+    spi_clock_high();
+    return result;
 }
 
 static char s25flxxxl_erase_sector(void * self, enum flash_memory_sector_size sector_size, unsigned long address)
@@ -286,7 +336,14 @@ static char s25flxxxl_erase_sector(void * self, enum flash_memory_sector_size se
 
 static char s25flxxxl_program_page(void * self, unsigned long address, const unsigned char * data)
 {
-    unsigned short i = 0;
+    unsigned int i = 0;
+
+    (void) self;
+
+    if (data == NULL)
+    {
+        return -1;
+    }
 
     clear_status();
     write_enable();
@@ -299,7 +356,9 @@ static char s25flxxxl_program_page(void * self, unsigned long address, const uns
     spi_tx_byte(address >> 8);
     spi_tx_byte(address >> 0);
     for (i = 0; i < 256; ++i)
+    {
         qspi_tx_byte(data[i]);
+    }
     spi_output_disable();
     spi_cs_high();
     spi_clock_high();
@@ -307,7 +366,7 @@ static char s25flxxxl_program_page(void * self, unsigned long address, const uns
 }
 
 static struct s25flxxxl _s25flxxxl = {
-    {s25flxxxl_reset, s25flxxxl_probe, s25flxxxl_read, s25flxxxl_erase_sector, s25flxxxl_program_page}
+    {s25flxxxl_reset, s25flxxxl_probe, s25flxxxl_read, s25flxxxl_verify, s25flxxxl_erase_sector, s25flxxxl_program_page}
 };
 
 void * s25flxxxl = & _s25flxxxl;

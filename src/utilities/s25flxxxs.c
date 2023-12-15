@@ -112,6 +112,40 @@ static char enable_quad_mode(void)
     return wait_status();
 }
 
+static char erase_4k_parameter_sector(unsigned long address)
+{
+    unsigned char spi_tx[5];
+
+    spi_tx[0] = 0x21;
+    spi_tx[1] = address >> 24;
+    spi_tx[2] = address >> 16;
+    spi_tx[3] = address >> 8;
+    spi_tx[4] = address >> 0;
+
+    clear_status();
+    write_enable();
+    spi_transaction(spi_tx, 5, NULL, 0);
+
+    return wait_status();
+}
+
+static char erase_sector(unsigned long address)
+{
+    unsigned char spi_tx[5];
+
+    spi_tx[0] = 0xdc;
+    spi_tx[1] = address >> 24;
+    spi_tx[2] = address >> 16;
+    spi_tx[3] = address >> 8;
+    spi_tx[4] = address >> 0;
+
+    clear_status();
+    write_enable();
+    spi_transaction(spi_tx, 5, NULL, 0);
+
+    return wait_status();
+}
+
 struct s25flxxxs
 {
     // Interface.
@@ -120,7 +154,7 @@ struct s25flxxxs
     BOOL uniform_256K_sectors;
     BOOL sectors_4k_at_top;
     BOOL page_size_512;
-    unsigned short num_64k_sectors;
+    unsigned int num_64k_sectors;
     unsigned char read_latency_cycles;
 };
 
@@ -159,7 +193,7 @@ static char s25flxxxs_probe(void * self, struct flash_memory_descriptor * descri
     if (spi_rx[0] != 0x01)
         return -1;
 
-    descriptor->manufacturer = "Infineon";
+    descriptor->manufacturer = "infineon";
     if (spi_rx[1] == 0x20 && spi_rx[2] == 0x18)
     {
         // 128 Mb
@@ -259,11 +293,10 @@ static char s25flxxxs_probe(void * self, struct flash_memory_descriptor * descri
     return 0;
 }
 
-static char s25flxxxs_read(void * self, unsigned long address, unsigned char * data)
+static char s25flxxxs_read(void * self, unsigned long address, unsigned char * data, unsigned int size)
 {
-    unsigned short i;
     const struct s25flxxxs * self_ = (const struct s25flxxxs *) self;
-    clear_status();
+
     spi_clock_high();
     spi_cs_low();
     spi_output_enable();
@@ -276,14 +309,18 @@ static char s25flxxxs_read(void * self, unsigned long address, unsigned char * d
     spi_idle_clocks(self_->read_latency_cycles);
     if (data == NULL)
     {
-        for (i = 0; i < 512; ++i)
+        unsigned int i;
+
+        for (i = 0; i < size; ++i)
         {
             qspi_rx_byte();
         }
     }
     else
     {
-        for (i = 0; i < 512; ++i)
+        unsigned int i;
+
+        for (i = 0; i < size; ++i)
         {
             data[i] = qspi_rx_byte();
         }
@@ -293,38 +330,50 @@ static char s25flxxxs_read(void * self, unsigned long address, unsigned char * d
     return 0;
 }
 
-static char erase_4k_parameter_sector(unsigned long address)
+static char s25flxxxs_verify(void * self, unsigned long address, unsigned char * data, unsigned int size)
 {
-    unsigned char spi_tx[5];
+    const struct s25flxxxs * self_ = (const struct s25flxxxs *) self;
+    char result = 0;
 
-    spi_tx[0] = 0x21;
-    spi_tx[1] = address >> 24;
-    spi_tx[2] = address >> 16;
-    spi_tx[3] = address >> 8;
-    spi_tx[4] = address >> 0;
+    spi_clock_high();
+    spi_cs_low();
+    spi_output_enable();
+    spi_tx_byte(0x6c);
+    spi_tx_byte(address >> 24);
+    spi_tx_byte(address >> 16);
+    spi_tx_byte(address >> 8);
+    spi_tx_byte(address >> 0);
+    spi_output_disable();
+    spi_idle_clocks(self_->read_latency_cycles);
+    if (data == NULL)
+    {
+        unsigned int i;
 
-    clear_status();
-    write_enable();
-    spi_transaction(spi_tx, 5, NULL, 0);
+        for (i = 0; i < size; ++i)
+        {
+            if (qspi_rx_byte() != 0)
+            {
+                result = -1;
+                break;
+            }
+        }
+    }
+    else
+    {
+        unsigned int i;
 
-    return wait_status();
-}
-
-static char erase_sector(unsigned long address)
-{
-    unsigned char spi_tx[5];
-
-    spi_tx[0] = 0xdc;
-    spi_tx[1] = address >> 24;
-    spi_tx[2] = address >> 16;
-    spi_tx[3] = address >> 8;
-    spi_tx[4] = address >> 0;
-
-    clear_status();
-    write_enable();
-    spi_transaction(spi_tx, 5, NULL, 0);
-
-    return wait_status();
+        for (i = 0; i < size; ++i)
+        {
+            if (qspi_rx_byte() != data[i])
+            {
+                result = -1;
+                break;
+            }
+        }
+    }
+    spi_cs_high();
+    spi_clock_high();
+    return result;
 }
 
 static char s25flxxxs_erase_sector(void * self, enum flash_memory_sector_size sector_size, unsigned long address)
@@ -342,7 +391,7 @@ static char s25flxxxs_erase_sector(void * self, enum flash_memory_sector_size se
     }
     else
     {
-        unsigned short sector_number_64k;
+        unsigned int sector_number_64k;
 
         if (sector_size != flash_memory_sector_size_64k)
         {
@@ -379,8 +428,14 @@ static char s25flxxxs_erase_sector(void * self, enum flash_memory_sector_size se
 
 static char s25flxxxs_program_page(void * self, unsigned long address, const unsigned char * data)
 {
-    unsigned short i = 0;
     const struct s25flxxxs * self_ = (const struct s25flxxxs *) self;
+    unsigned int size = self_->page_size_512 ? 512 : 256;
+    unsigned int i;
+
+    if (data == NULL)
+    {
+        return -1;
+    }
 
     if ((address & 0xff) || (self_->page_size_512 && (address & 0x1ff)))
     {
@@ -398,20 +453,10 @@ static char s25flxxxs_program_page(void * self, unsigned long address, const uns
     spi_tx_byte(address >> 16);
     spi_tx_byte(address >> 8);
     spi_tx_byte(address >> 0);
-
-    for (i = 0; i <= 256; ++i)
+    for (i = 0; i < size; ++i)
     {
         qspi_tx_byte(data[i]);
     }
-
-    if (self_->page_size_512)
-    {
-        for (i = 0; i < 256; ++i)
-        {
-            qspi_tx_byte(data[i]);
-        }
-    }
-
     spi_output_disable();
     spi_cs_high();
     spi_clock_high();
@@ -420,7 +465,7 @@ static char s25flxxxs_program_page(void * self, unsigned long address, const uns
 }
 
 static struct s25flxxxs _s25flxxxs = {
-    {s25flxxxs_reset, s25flxxxs_probe, s25flxxxs_read, s25flxxxs_erase_sector, s25flxxxs_program_page}
+    {s25flxxxs_reset, s25flxxxs_probe, s25flxxxs_read, s25flxxxs_verify, s25flxxxs_erase_sector, s25flxxxs_program_page}
 };
 
 void * s25flxxxs = & _s25flxxxs;

@@ -23,9 +23,10 @@ enum flash_memory_page_size
     flash_memory_page_size_512
 };
 
-struct flash_memory_descriptor {
+struct flash_memory_descriptor
+{
     const char * manufacturer;
-    unsigned short memory_size_mb;
+    unsigned char memory_size_mb;
     BOOL uniform_sector_sizes[flash_memory_sector_size_last];
     enum flash_memory_page_size page_size;
     unsigned char read_latency_cycles;
@@ -34,17 +35,20 @@ struct flash_memory_descriptor {
     BOOL register_protection_enabled;
 };
 
-struct flash_memory_interface {
+struct flash_memory_interface
+{
     char (*reset) (void * self);
     char (*probe) (void * self, struct flash_memory_descriptor * descriptor);
-    char (*read) (void * self, unsigned long address, unsigned char * data);
+    char (*read) (void * self, unsigned long address, unsigned char * data, unsigned int size);
+    char (*verify) (void * self, unsigned long address, unsigned char * data, unsigned int size);
     char (*erase_sector) (void * self, enum flash_memory_sector_size sector_size, unsigned long address);
     char (*program_page) (void * self, unsigned long address, const unsigned char * data);
 };
 
 char flash_memory_reset(void * self);
 char flash_memory_probe(void * self, struct flash_memory_descriptor * descriptor);
-char flash_memory_read(void * self, unsigned long address, unsigned char * data);
+char flash_memory_read(void * self, unsigned long address, unsigned char * data, unsigned int size);
+char flash_memory_verify(void * self, unsigned long address, unsigned char * data, unsigned int size);
 char flash_memory_erase_sector(void * self, enum flash_memory_sector_size sector_size, unsigned long address);
 char flash_memory_program_page(void * self, unsigned long address, const unsigned char * data);
 
