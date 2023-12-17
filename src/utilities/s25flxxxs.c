@@ -158,9 +158,9 @@ struct s25flxxxs
     unsigned char read_latency_cycles;
 };
 
-static char s25flxxxs_reset(void * self)
+static char s25flxxxs_reset(void * qspi_flash_device)
 {
-    (void) self;
+    (void) qspi_flash_device;
 
     spi_cs_high();
     spi_clock_high();
@@ -177,16 +177,16 @@ static char s25flxxxs_reset(void * self)
     return 0;
 }
 
-static char s25flxxxs_probe(void * self, struct qspi_flash_descriptor * descriptor)
+static char s25flxxxs_init(void * qspi_flash_device)
 {
+    struct s25flxxxs * self = (struct s25flxxxs *) qspi_flash_device;
     const uint8_t spi_tx[] = {0x9f};
     uint8_t spi_rx[44] = {0x00};
     unsigned char sr1;
     unsigned char cr1;
     BOOL quad_mode_enabled;
-    struct s25flxxxs * self_ = (struct s25flxxxs *) self;
 
-    if (s25flxxxs_reset(self) != 0)
+    if (s25flxxxs_reset(qspi_flash_device) != 0)
         return -1;
 
     // Read RDID to confirm model and get density.
@@ -194,24 +194,20 @@ static char s25flxxxs_probe(void * self, struct qspi_flash_descriptor * descript
     if (spi_rx[0] != 0x01)
         return -1;
 
-    descriptor->manufacturer = "infineon";
     if (spi_rx[1] == 0x20 && spi_rx[2] == 0x18)
     {
         // 128 Mb
-        descriptor->memory_size_mb = 16;
-        self_->num_64k_sectors = 256;
+        self->num_64k_sectors = 256;
     }
     else if (spi_rx[1] == 0x02 && spi_rx[2] == 0x19)
     {
         // 256 Mb
-        descriptor->memory_size_mb = 32;
-        self_->num_64k_sectors = 512;
+        self->num_64k_sectors = 512;
     }
     else if (spi_rx[1] == 0x02 && spi_rx[2] == 0x20)
     {
         // 256 Mb
-        descriptor->memory_size_mb = 64;
-        self_->num_64k_sectors = 1024;
+        self->num_64k_sectors = 1024;
     }
     else
     {
@@ -226,20 +222,12 @@ static char s25flxxxs_probe(void * self, struct qspi_flash_descriptor * descript
     if (spi_rx[4] == 0x00)
     {
         // Uniform 256K sectors.
-        self_->uniform_256K_sectors = TRUE;
-        descriptor->uniform_sector_sizes[qspi_flash_sector_size_4k  ] = FALSE;
-        descriptor->uniform_sector_sizes[qspi_flash_sector_size_32k ] = FALSE;
-        descriptor->uniform_sector_sizes[qspi_flash_sector_size_64k ] = FALSE;
-        descriptor->uniform_sector_sizes[qspi_flash_sector_size_256k] = TRUE;
+        self->uniform_256K_sectors = TRUE;
     }
     else if (spi_rx[4] == 0x01)
     {
         // Mixed 4K / 64K sectors.
-        self_->uniform_256K_sectors = FALSE;
-        descriptor->uniform_sector_sizes[qspi_flash_sector_size_4k  ] = FALSE;
-        descriptor->uniform_sector_sizes[qspi_flash_sector_size_32k ] = FALSE;
-        descriptor->uniform_sector_sizes[qspi_flash_sector_size_64k ] = TRUE;
-        descriptor->uniform_sector_sizes[qspi_flash_sector_size_256k] = FALSE;
+        self->uniform_256K_sectors = FALSE;
     }
     else
     {
@@ -247,21 +235,19 @@ static char s25flxxxs_probe(void * self, struct qspi_flash_descriptor * descript
     }
 
     cr1 = read_configuration_register_1();
-    self_->read_latency_cycles = ((cr1 >> 6) == 3) ? 0 : 8;
-    self_->sectors_4k_at_top = (cr1 & 0x04) ? TRUE : FALSE;
+    self->read_latency_cycles = ((cr1 >> 6) == 3) ? 0 : 8;
+    self->sectors_4k_at_top = (cr1 & 0x04) ? TRUE : FALSE;
 
     // Determine page size.
     if (spi_rx[42] == 0x08)
     {
         // Page size 256 bytes.
-        descriptor->page_size = qspi_flash_page_size_256;
-        self_->page_size_512 = FALSE;
+        self->page_size_512 = FALSE;
     }
     else if (spi_rx[42] == 0x09)
     {
         // Page size 512 bytes.
-        descriptor->page_size = qspi_flash_page_size_512;
-        self_->page_size_512 = TRUE;
+        self->page_size_512 = TRUE;
     }
     else
     {
@@ -287,17 +273,12 @@ static char s25flxxxs_probe(void * self, struct qspi_flash_descriptor * descript
 
     sr1 = read_status_register_1();
 
-    descriptor->read_latency_cycles = self_->read_latency_cycles;
-    descriptor->quad_mode_enabled = quad_mode_enabled;
-    descriptor->memory_array_protection_enabled = (sr1 & 0x1c) ? TRUE : FALSE;
-    descriptor->register_protection_enabled = (sr1 & 0x80) ? TRUE : FALSE;
-
     return 0;
 }
 
-static char s25flxxxs_read(void * self, unsigned long address, unsigned char * data, unsigned int size)
+static char s25flxxxs_read(void * qspi_flash_device, unsigned long address, unsigned char * data, unsigned int size)
 {
-    const struct s25flxxxs * self_ = (const struct s25flxxxs *) self;
+    const struct s25flxxxs * self = (const struct s25flxxxs *) qspi_flash_device;
 
     spi_clock_high();
     spi_cs_low();
@@ -308,7 +289,7 @@ static char s25flxxxs_read(void * self, unsigned long address, unsigned char * d
     spi_tx_byte(address >> 8);
     spi_tx_byte(address >> 0);
     spi_output_disable();
-    spi_idle_clocks(self_->read_latency_cycles);
+    spi_idle_clocks(self->read_latency_cycles);
     if (data == NULL)
     {
         unsigned int i;
@@ -332,9 +313,9 @@ static char s25flxxxs_read(void * self, unsigned long address, unsigned char * d
     return 0;
 }
 
-static char s25flxxxs_verify(void * self, unsigned long address, unsigned char * data, unsigned int size)
+static char s25flxxxs_verify(void * qspi_flash_device, unsigned long address, unsigned char * data, unsigned int size)
 {
-    const struct s25flxxxs * self_ = (const struct s25flxxxs *) self;
+    const struct s25flxxxs * self = (const struct s25flxxxs *) qspi_flash_device;
     char result = 0;
 
     spi_clock_high();
@@ -346,7 +327,7 @@ static char s25flxxxs_verify(void * self, unsigned long address, unsigned char *
     spi_tx_byte(address >> 8);
     spi_tx_byte(address >> 0);
     spi_output_disable();
-    spi_idle_clocks(self_->read_latency_cycles);
+    spi_idle_clocks(self->read_latency_cycles);
     if (data == NULL)
     {
         unsigned int i;
@@ -378,13 +359,13 @@ static char s25flxxxs_verify(void * self, unsigned long address, unsigned char *
     return result;
 }
 
-static char s25flxxxs_erase_sector(void * self, enum qspi_flash_sector_size sector_size, unsigned long address)
+static char s25flxxxs_erase(void * qspi_flash_device, enum qspi_flash_erase_block_size erase_block_size, unsigned long address)
 {
-    const struct s25flxxxs * self_ = (const struct s25flxxxs *) self;
+    const struct s25flxxxs * self = (const struct s25flxxxs *) qspi_flash_device;
 
-    if (self_->uniform_256K_sectors)
+    if (self->uniform_256K_sectors)
     {
-        if (sector_size != qspi_flash_sector_size_256k)
+        if (erase_block_size != qspi_flash_erase_block_size_256k)
         {
             return -1;
         }
@@ -393,16 +374,16 @@ static char s25flxxxs_erase_sector(void * self, enum qspi_flash_sector_size sect
     }
     else
     {
-        unsigned int sector_number_64k;
+        unsigned int erase_block_number_64k;
 
-        if (sector_size != qspi_flash_sector_size_64k)
+        if (erase_block_size != qspi_flash_erase_block_size_64k)
         {
             return -1;
         }
 
-        sector_number_64k = address >> 16;
+        erase_block_number_64k = address >> 16;
 
-        if ((self_->sectors_4k_at_top && (sector_number_64k >= self_->num_64k_sectors - 2)) || (sector_number_64k < 2))
+        if ((self->sectors_4k_at_top && (erase_block_number_64k >= self->num_64k_sectors - 2)) || (erase_block_number_64k < 2))
         {
             unsigned char i;
 
@@ -428,20 +409,26 @@ static char s25flxxxs_erase_sector(void * self, enum qspi_flash_sector_size sect
     }
 }
 
-static char s25flxxxs_program_page(void * self, unsigned long address, const unsigned char * data)
+static char s25flxxxs_program(void * qspi_flash_device, enum qspi_flash_page_size page_size, unsigned long address, const unsigned char * data)
 {
-    const struct s25flxxxs * self_ = (const struct s25flxxxs *) self;
-    unsigned int size = self_->page_size_512 ? 512 : 256;
+    const struct s25flxxxs * self = (const struct s25flxxxs *) qspi_flash_device;
+    unsigned int size = self->page_size_512 ? 512 : 256;
     unsigned int i;
 
-    if (data == NULL)
+    if ((address & 0xff) || (self->page_size_512 && (address & 0x1ff)))
     {
+        // Address not aligned to page boundary.
         return -1;
     }
 
-    if ((address & 0xff) || (self_->page_size_512 && (address & 0x1ff)))
+    if ((page_size == qspi_flash_page_size_512) != self->page_size_512)
     {
-        // Address not aligned to page boundary.
+        // Unsupported page size.
+        return -1;
+    }
+
+    if (data == NULL)
+    {
         return -1;
     }
 
@@ -466,8 +453,44 @@ static char s25flxxxs_program_page(void * self, unsigned long address, const uns
     return wait_status();
 }
 
-static struct s25flxxxs _s25flxxxs = {
-    {s25flxxxs_reset, s25flxxxs_probe, s25flxxxs_read, s25flxxxs_verify, s25flxxxs_erase_sector, s25flxxxs_program_page}
-};
+static char s25flxxxs_get_manufacturer(void * qspi_flash_device, const char ** manufacturer)
+{
+    (void) qspi_flash_device;
+    *manufacturer = "infineon";
+    return 0;
+}
+
+static char s25flxxxs_get_size(void * qspi_flash_device, unsigned int * size)
+{
+    const struct s25flxxxs * self = (const struct s25flxxxs *) qspi_flash_device;
+    *size = self->num_64k_sectors >> 4;
+    return 0;
+}
+
+static char s25flxxxs_get_page_size(void * qspi_flash_device, enum qspi_flash_page_size * page_size)
+{
+    const struct s25flxxxs * self = (const struct s25flxxxs *) qspi_flash_device;
+    *page_size = (self->page_size_512 ? qspi_flash_page_size_512 : qspi_flash_page_size_256);
+    return 0;
+}
+
+static char s25flxxxs_get_erase_block_size_support(void * qspi_flash_device, enum qspi_flash_erase_block_size erase_block_size, BOOL * is_supported)
+{
+    const struct s25flxxxs * self = (const struct s25flxxxs *) qspi_flash_device;
+    *is_supported = (self->uniform_256K_sectors && erase_block_size == qspi_flash_erase_block_size_256k) || (erase_block_size == qspi_flash_erase_block_size_64k);
+    return 0;
+}
+
+static struct s25flxxxs _s25flxxxs = {{
+    s25flxxxs_init,
+    s25flxxxs_read,
+    s25flxxxs_verify,
+    s25flxxxs_erase,
+    s25flxxxs_program,
+    s25flxxxs_get_manufacturer,
+    s25flxxxs_get_size,
+    s25flxxxs_get_page_size,
+    s25flxxxs_get_erase_block_size_support
+}};
 
 void * s25flxxxs = & _s25flxxxs;
