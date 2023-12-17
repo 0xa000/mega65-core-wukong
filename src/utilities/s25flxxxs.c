@@ -2,7 +2,7 @@
 #include <memory.h>
 #include <stdio.h>
 
-#include "flash_memory.h"
+#include "qspiflash.h"
 #include "qspihwassist.h"
 #include "qspibitbash.h"
 
@@ -149,7 +149,7 @@ static char erase_sector(unsigned long address)
 struct s25flxxxs
 {
     // Interface.
-    const struct flash_memory_interface interface;
+    const struct qspi_flash_interface interface;
     // Attributes.
     BOOL uniform_256K_sectors;
     BOOL sectors_4k_at_top;
@@ -177,7 +177,7 @@ static char s25flxxxs_reset(void * self)
     return 0;
 }
 
-static char s25flxxxs_probe(void * self, struct flash_memory_descriptor * descriptor)
+static char s25flxxxs_probe(void * self, struct qspi_flash_descriptor * descriptor)
 {
     const uint8_t spi_tx[] = {0x9f};
     uint8_t spi_rx[44] = {0x00};
@@ -227,19 +227,19 @@ static char s25flxxxs_probe(void * self, struct flash_memory_descriptor * descri
     {
         // Uniform 256K sectors.
         self_->uniform_256K_sectors = TRUE;
-        descriptor->uniform_sector_sizes[flash_memory_sector_size_4k  ] = FALSE;
-        descriptor->uniform_sector_sizes[flash_memory_sector_size_32k ] = FALSE;
-        descriptor->uniform_sector_sizes[flash_memory_sector_size_64k ] = FALSE;
-        descriptor->uniform_sector_sizes[flash_memory_sector_size_256k] = TRUE;
+        descriptor->uniform_sector_sizes[qspi_flash_sector_size_4k  ] = FALSE;
+        descriptor->uniform_sector_sizes[qspi_flash_sector_size_32k ] = FALSE;
+        descriptor->uniform_sector_sizes[qspi_flash_sector_size_64k ] = FALSE;
+        descriptor->uniform_sector_sizes[qspi_flash_sector_size_256k] = TRUE;
     }
     else if (spi_rx[4] == 0x01)
     {
         // Mixed 4K / 64K sectors.
         self_->uniform_256K_sectors = FALSE;
-        descriptor->uniform_sector_sizes[flash_memory_sector_size_4k  ] = FALSE;
-        descriptor->uniform_sector_sizes[flash_memory_sector_size_32k ] = FALSE;
-        descriptor->uniform_sector_sizes[flash_memory_sector_size_64k ] = TRUE;
-        descriptor->uniform_sector_sizes[flash_memory_sector_size_256k] = FALSE;
+        descriptor->uniform_sector_sizes[qspi_flash_sector_size_4k  ] = FALSE;
+        descriptor->uniform_sector_sizes[qspi_flash_sector_size_32k ] = FALSE;
+        descriptor->uniform_sector_sizes[qspi_flash_sector_size_64k ] = TRUE;
+        descriptor->uniform_sector_sizes[qspi_flash_sector_size_256k] = FALSE;
     }
     else
     {
@@ -254,13 +254,13 @@ static char s25flxxxs_probe(void * self, struct flash_memory_descriptor * descri
     if (spi_rx[42] == 0x08)
     {
         // Page size 256 bytes.
-        descriptor->page_size = flash_memory_page_size_256;
+        descriptor->page_size = qspi_flash_page_size_256;
         self_->page_size_512 = FALSE;
     }
     else if (spi_rx[42] == 0x09)
     {
         // Page size 512 bytes.
-        descriptor->page_size = flash_memory_page_size_512;
+        descriptor->page_size = qspi_flash_page_size_512;
         self_->page_size_512 = TRUE;
     }
     else
@@ -378,13 +378,13 @@ static char s25flxxxs_verify(void * self, unsigned long address, unsigned char *
     return result;
 }
 
-static char s25flxxxs_erase_sector(void * self, enum flash_memory_sector_size sector_size, unsigned long address)
+static char s25flxxxs_erase_sector(void * self, enum qspi_flash_sector_size sector_size, unsigned long address)
 {
     const struct s25flxxxs * self_ = (const struct s25flxxxs *) self;
 
     if (self_->uniform_256K_sectors)
     {
-        if (sector_size != flash_memory_sector_size_256k)
+        if (sector_size != qspi_flash_sector_size_256k)
         {
             return -1;
         }
@@ -395,7 +395,7 @@ static char s25flxxxs_erase_sector(void * self, enum flash_memory_sector_size se
     {
         unsigned int sector_number_64k;
 
-        if (sector_size != flash_memory_sector_size_64k)
+        if (sector_size != qspi_flash_sector_size_64k)
         {
             return -1;
         }

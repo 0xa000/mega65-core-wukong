@@ -2,7 +2,7 @@
 #include <memory.h>
 #include <stdio.h>
 
-#include "flash_memory.h"
+#include "qspiflash.h"
 #include "qspihwassist.h"
 #include "qspibitbash.h"
 
@@ -112,7 +112,7 @@ static char wait_status(void)
 struct s25flxxxl
 {
     // Interface.
-    const struct flash_memory_interface interface;
+    const struct qspi_flash_interface interface;
     // Attributes.
     unsigned char read_latency_cycles;
 };
@@ -157,7 +157,7 @@ static char enable_quad_mode(void)
     return wait_status();
 }
 
-static char s25flxxxl_probe(void * self, struct flash_memory_descriptor * descriptor)
+static char s25flxxxl_probe(void * self, struct qspi_flash_descriptor * descriptor)
 {
     const uint8_t spi_tx[] = {0x9f};
     uint8_t spi_rx[] = {0x00, 0x00, 0x00};
@@ -183,12 +183,12 @@ static char s25flxxxl_probe(void * self, struct flash_memory_descriptor * descri
     else
         return -1;
 
-    descriptor->uniform_sector_sizes[flash_memory_sector_size_4k  ] = TRUE;
-    descriptor->uniform_sector_sizes[flash_memory_sector_size_32k ] = TRUE;
-    descriptor->uniform_sector_sizes[flash_memory_sector_size_64k ] = TRUE;
-    descriptor->uniform_sector_sizes[flash_memory_sector_size_256k] = FALSE;
+    descriptor->uniform_sector_sizes[qspi_flash_sector_size_4k  ] = TRUE;
+    descriptor->uniform_sector_sizes[qspi_flash_sector_size_32k ] = TRUE;
+    descriptor->uniform_sector_sizes[qspi_flash_sector_size_64k ] = TRUE;
+    descriptor->uniform_sector_sizes[qspi_flash_sector_size_256k] = FALSE;
 
-    descriptor->page_size = flash_memory_page_size_256;
+    descriptor->page_size = qspi_flash_page_size_256;
 
     cr1 = read_configuration_register_1();
     cr2 = read_configuration_register_2();
@@ -302,7 +302,7 @@ static char s25flxxxl_verify(void * self, unsigned long address, unsigned char *
     return result;
 }
 
-static char s25flxxxl_erase_sector(void * self, enum flash_memory_sector_size sector_size, unsigned long address)
+static char s25flxxxl_erase_sector(void * self, enum qspi_flash_sector_size sector_size, unsigned long address)
 {
     unsigned char spi_tx[5];
 
@@ -310,13 +310,13 @@ static char s25flxxxl_erase_sector(void * self, enum flash_memory_sector_size se
 
     switch (sector_size)
     {
-    case flash_memory_sector_size_4k:
+    case qspi_flash_sector_size_4k:
         spi_tx[0] = 0x21;
         break;
-    case flash_memory_sector_size_32k:
+    case qspi_flash_sector_size_32k:
         spi_tx[0] = 0x53;
         break;
-    case flash_memory_sector_size_64k:
+    case qspi_flash_sector_size_64k:
         spi_tx[0] = 0xdc;
         break;
     default:
