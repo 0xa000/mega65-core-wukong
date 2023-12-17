@@ -212,8 +212,8 @@ static char s25flxxxl_probe(void * self, struct flash_memory_descriptor * descri
 
     descriptor->read_latency_cycles = self_->read_latency_cycles;
     descriptor->quad_mode_enabled = quad_mode_enabled;
-    descriptor->memory_array_protection_enabled = (cr2 & 0x04) || (cr1 & 0x3c);
-    descriptor->register_protection_enabled = cr1 & 0x01;
+    descriptor->memory_array_protection_enabled = ((cr2 & 0x04) || (cr1 & 0x3c)) ? TRUE : FALSE;
+    descriptor->register_protection_enabled = (cr1 & 0x01) ? TRUE : FALSE;
 
     return 0;
 }

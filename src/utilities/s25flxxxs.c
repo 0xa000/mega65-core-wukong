@@ -181,6 +181,7 @@ static char s25flxxxs_probe(void * self, struct flash_memory_descriptor * descri
 {
     const uint8_t spi_tx[] = {0x9f};
     uint8_t spi_rx[44] = {0x00};
+    unsigned char sr1;
     unsigned char cr1;
     BOOL quad_mode_enabled;
     struct s25flxxxs * self_ = (struct s25flxxxs *) self;
@@ -284,11 +285,12 @@ static char s25flxxxs_probe(void * self, struct flash_memory_descriptor * descri
         return -1;
     }
 
-    // TODO: Find out if registers or memory array is write protected.
+    sr1 = read_status_register_1();
+
     descriptor->read_latency_cycles = self_->read_latency_cycles;
     descriptor->quad_mode_enabled = quad_mode_enabled;
-    descriptor->memory_array_protection_enabled = FALSE;
-    descriptor->register_protection_enabled = FALSE;
+    descriptor->memory_array_protection_enabled = (sr1 & 0x1c) ? TRUE : FALSE;
+    descriptor->register_protection_enabled = (sr1 & 0x80) ? TRUE : FALSE;
 
     return 0;
 }
