@@ -96,6 +96,11 @@ char qspi_flash_get_erase_block_size_support(void * qspi_flash_device, enum qspi
 
 char get_erase_block_size_in_bytes(enum qspi_flash_erase_block_size erase_block_size, unsigned long * size)
 {
+    if (size == NULL)
+    {
+        return -1;
+    }
+
     switch (erase_block_size)
     {
     case qspi_flash_erase_block_size_4k:
@@ -117,6 +122,11 @@ char get_erase_block_size_in_bytes(enum qspi_flash_erase_block_size erase_block_
 
 char get_page_size_in_bytes(enum qspi_flash_page_size page_size, unsigned int * size)
 {
+    if (size == NULL)
+    {
+        return -1;
+    }
+
     switch (page_size)
     {
     case qspi_flash_page_size_256:
@@ -134,6 +144,11 @@ char get_max_erase_block_size(void * qspi_flash_device, enum qspi_flash_erase_bl
 {
     enum qspi_flash_erase_block_size result = qspi_flash_erase_block_size_last;
     int i;
+
+    if (max_erase_block_size == NULL)
+    {
+        return -1;
+    }
 
     for (i = 0; i < qspi_flash_erase_block_size_last; ++i)
     {

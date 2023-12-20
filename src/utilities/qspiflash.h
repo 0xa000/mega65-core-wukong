@@ -46,8 +46,7 @@ struct qspi_flash_interface
 };
 
 /*
-  Initialize the QSPI flash driver. Detailed information about the QSPI flash
-  chip is returned via the descriptor.
+  Initialize the specified flash device.
 */
 char qspi_flash_init(void * qspi_flash_device);
 

@@ -92,7 +92,9 @@ static void clear_status(void)
     {
         status = read_status();
         if (!busy(&status) && !error_occurred(&status))
+        {
             break;
+        }
         clear_status_register();
     }
 }
@@ -104,8 +106,11 @@ static char wait_status(void)
     {
         status = read_status();
         if (!busy(&status))
+        {
             break;
+        }
     }
+
     return (error_occurred(&status) ? -1 : 0);
 }
 
@@ -122,12 +127,14 @@ static char s25flxxxl_reset(void * qspi_flash_device)
 {
     (void) qspi_flash_device;
 
+    // Ensure SPI bus is in idle state.
     spi_cs_high();
     spi_clock_high();
 
+    // Wait a while.
     usleep(10000);
 
-    // Allow lots of clock ticks to get attention of SPI
+    // Transmit idle clock pulses to get the attention of the flash chip.
     spi_idle_clocks(255);
 
     // Reset enable.
@@ -136,7 +143,9 @@ static char s25flxxxl_reset(void * qspi_flash_device)
     // Reset.
     spi_transaction_tx8(0x99);
 
+    // Wait a while.
     usleep(10000);
+
     return 0;
 }
 
@@ -155,6 +164,7 @@ static char enable_quad_mode(void)
 
     volatile_write_enable();
     spi_transaction(spi_tx, 3, NULL, 0);
+
     return wait_status();
 }
 
@@ -167,43 +177,52 @@ static char s25flxxxl_init(void * qspi_flash_device)
     BOOL quad_mode_enabled;
 
     if (s25flxxxl_reset(qspi_flash_device) != 0)
+    {
         return -1;
+    }
 
     // Read RDID to confirm model and get density.
     spi_transaction(spi_tx, 1, spi_rx, 3);
     if (spi_rx[0] != 0x01 || spi_rx[1] != 0x60)
+    {
         return -1;
+    }
 
     if (spi_rx[2] == 0x18)
     {
-        // 128 Mb
+        // 128 Mb == 16 MB.
         self->size = 16;
     }
     else if (spi_rx[2] == 0x19)
     {
-        // 256 Mb
+        // 256 Mb == 32 MB.
         self->size = 32;
     }
     else
+    {
         return -1;
+    }
 
-    cr1 = read_configuration_register_1();
     cr3 = read_configuration_register_3();
-
     self->read_latency_cycles = cr3 & 0x0f;
 
+    cr1 = read_configuration_register_1();
     quad_mode_enabled = cr1 & 0x02;
+
     if (!quad_mode_enabled)
     {
         if (enable_quad_mode() != 0)
+        {
            return -1;
+        }
+
         cr1 = read_configuration_register_1();
         quad_mode_enabled = cr1 & 0x02;
-    }
 
-    if (!quad_mode_enabled)
-    {
-        return -1;
+        if (!quad_mode_enabled)
+        {
+            return -1;
+        }
     }
 
     return 0;
@@ -290,6 +309,7 @@ static char s25flxxxl_verify(void * qspi_flash_device, unsigned long address, un
     }
     spi_cs_high();
     spi_clock_high();
+
     return result;
 }
 
@@ -322,6 +342,7 @@ static char s25flxxxl_erase(void * qspi_flash_device, enum qspi_flash_erase_bloc
     clear_status();
     write_enable();
     spi_transaction(spi_tx, 5, NULL, 0);
+
     return wait_status();
 }
 
@@ -358,6 +379,7 @@ static char s25flxxxl_program(void * qspi_flash_device, enum qspi_flash_page_siz
     spi_output_disable();
     spi_cs_high();
     spi_clock_high();
+
     return wait_status();
 }
 
