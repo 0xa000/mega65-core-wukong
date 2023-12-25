@@ -2,10 +2,11 @@
 #include <stddef.h>
 
 #include "qspihwassist.h"
+#include "qspibitbash.h"
 
 void hw_assisted_read_512(unsigned long address, unsigned char * data)
 {
-    unsigned char b;
+    // unsigned char b;
     // SPI command byte 0x6C.
     // Full hardware-acceleration of reading, which is both faster
     // and more reliable.
@@ -15,11 +16,15 @@ void hw_assisted_read_512(unsigned long address, unsigned char * data)
     POKE(0xD684, address >> 24);
     POKE(0xD680, 0x5f); // Set number of dummy cycles
     POKE(0xD680, 0x53); // QSPI Flash Sector read command
-    // XXX For some reason the busy flag is broken here.
-    // So just wait a little while, but only a little while
-    for (b = 0; b < 180; b++)
+    // // XXX For some reason the busy flag is broken here.
+    // // So just wait a little while, but only a little while
+    // for (b = 0; b < 180; b++)
+    // {
+    //     continue;
+    // }
+    while (PEEK(0xD680) & 3)
     {
-        continue;
+        POKE(0xD020, PEEK(0xD020) + 1);
     }
 
     // Tristate and release CS at the end
@@ -30,11 +35,24 @@ void hw_assisted_read_512(unsigned long address, unsigned char * data)
     }
 }
 
+void hw_assisted_erase_sector(unsigned long address)
+{
+    // SPI command byte 0xDC.
+    POKE(0xD681, address >> 0);
+    POKE(0xD682, address >> 8);
+    POKE(0xD683, address >> 16);
+    POKE(0xD684, address >> 24);
+    POKE(0xd680, 0x58);
+    while (PEEK(0xD680) & 3)
+    {
+        POKE(0xD020, PEEK(0xD020) + 1);
+    }
+}
+
 void hw_assisted_program_page_512(unsigned long address, const unsigned char * data)
 {
     // SPI command byte 0x34.
-    // is this broken? at least it is not used
-    lcopy((unsigned long)data, 0xffd6e00L, 512);
+    lcopy((unsigned long)data, 0XFFD6E00L, 512);
     POKE(0xD681, address >> 0);
     POKE(0xD682, address >> 8);
     POKE(0xD683, address >> 16);
@@ -51,7 +69,7 @@ void hw_assisted_program_page_256(unsigned long address, const unsigned char * d
     // SPI command byte 0x34.
     // NB. Command 0x55 (U) writes the *last* 256 bytes of the SD card buffer to
     // flash!
-    lcopy((unsigned long)data, 0xffd6f00L, 256);
+    lcopy((unsigned long)data, 0XFFD6F00L, 256);
     POKE(0xD681, address >> 0);
     POKE(0xD682, address >> 8);
     POKE(0xD683, address >> 16);
@@ -78,12 +96,12 @@ void hw_assisted_cfi_block_read(unsigned char *data)
     }
     // spi_cs_high();
 
-    lcopy(0xffd6e00L, (unsigned long)data, 512);
+    lcopy(0XFFD6E00L, (unsigned long)data, 512);
 }
 
 // TODO: Function to erase a sector using SPI command 0xdc; POKE 0x58 to $D680.
 //
-// void hw_assisted_erase_sector_0xDC?(unsigned long address)
+// void hw_assisted_erase_sector(unsigned long address)
 // {
 //     // SPI command byte 0xDC.
 //     // Do 64KB/256KB sector erase
@@ -98,7 +116,7 @@ void hw_assisted_cfi_block_read(unsigned char *data)
 
 // TODO: Function to erase a sector using SPI command 0x21; POKE 0x59 to $D680.
 //
-// void erase_sector_0x21?(unsigned long address)
+// void hw_assisted_erase_parameter_sector(unsigned long address)
 // {
 //     // SPI command byte 0x21.
 //     // JVZ: Seems we can also POKE 0x59 to $D680 for this?

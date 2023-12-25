@@ -2,6 +2,7 @@
 #define QSPIHWASSIST_H
 
 void hw_assisted_read_512(unsigned long address, unsigned char * data);
+void hw_assisted_erase_sector(unsigned long address);
 void hw_assisted_program_page_512(unsigned long address, const unsigned char * data);
 void hw_assisted_program_page_256(unsigned long address, const unsigned char * data);
 

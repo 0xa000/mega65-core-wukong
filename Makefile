@@ -997,6 +997,16 @@ $(UTILDIR)/joyflash-a200t.prg:       $(UTILDIR)/joyflash.c $(UTILDIR)/version.h 
 # Top must be below < 0x8000 after loading, so that it doesn't overlap with hypervisor
 	$(call mbuild_sizecheck,30719,$@)
 
+# Stand-alone utility to test QSPI hardware-assisted operations.
+$(UTILDIR)/testqspihw.prg:       $(UTILDIR)/testqspihw.c $(MFLASH_SOLO_REQ) $(MEGA65LIBCLIB) $(CC65_DEPEND)
+	$(call mbuild_header,$@)
+	$(CL65NC) --config $(UTILDIR)/util-std.cfg \
+		$(MEGA65LIBCINC) -O -o $@ \
+		--add-source -Ln $*.label --listing $*.list --mapfile $*.map \
+		-DSTANDALONE -DQSPI_FLASH_SLOT0 -DQSPI_ERASE_ZERO -DQSPI_FLASH_INSPECT -DQSPI_VERBOSE $< \
+		$(MFLASH_SOLO_LINK) $(MEGA65LIBCLIB)
+	$(call mbuild_sizecheck,43000,$@)
+
 $(UTILDIR)/hyperramtest.prg:       $(UTILDIR)/hyperramtest.c $(MEGA65LIBCLIB) $(CC65_DEPEND)
 	$(call mbuild_header,$@)
 	$(CL65) $(MEGA65LIBCINC) -O -o $*.prg --mapfile $*.map $< $(MEGA65LIBCLIB)
