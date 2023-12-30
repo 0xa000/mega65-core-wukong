@@ -230,120 +230,144 @@ static char s25flxxxl_init(void * qspi_flash_device)
 
 static char s25flxxxl_read(void * qspi_flash_device, unsigned long address, unsigned char * data, unsigned int size)
 {
-    const struct s25flxxxl * self = (const struct s25flxxxl *) qspi_flash_device;
-
-    spi_clock_high();
-    spi_cs_low();
-    spi_output_enable();
-    spi_tx_byte(0x6c);
-    spi_tx_byte(address >> 24);
-    spi_tx_byte(address >> 16);
-    spi_tx_byte(address >> 8);
-    spi_tx_byte(address >> 0);
-    spi_output_disable();
-    spi_idle_clocks(self->read_latency_cycles);
-    if (data == NULL)
+    if (size == 512)
     {
-        unsigned int i;
-
-        for (i = 0; i < size; ++i)
-        {
-            qspi_rx_byte();
-        }
+        // Use hardware acceleration if possible.
+        hw_assisted_read_512(address, data);
     }
     else
     {
-        unsigned int i;
+        const struct s25flxxxl * self = (const struct s25flxxxl *) qspi_flash_device;
 
-        for (i = 0; i < size; ++i)
+        spi_clock_high();
+        spi_cs_low();
+        spi_output_enable();
+        spi_tx_byte(0x6c);
+        spi_tx_byte(address >> 24);
+        spi_tx_byte(address >> 16);
+        spi_tx_byte(address >> 8);
+        spi_tx_byte(address >> 0);
+        spi_output_disable();
+        spi_idle_clocks(self->read_latency_cycles);
+        if (data == NULL)
         {
-            data[i] = qspi_rx_byte();
+            unsigned int i;
+
+            for (i = 0; i < size; ++i)
+            {
+                qspi_rx_byte();
+            }
         }
+        else
+        {
+            unsigned int i;
+
+            for (i = 0; i < size; ++i)
+            {
+                data[i] = qspi_rx_byte();
+            }
+        }
+        spi_cs_high();
+        spi_clock_high();
     }
-    spi_cs_high();
-    spi_clock_high();
 
     return 0;
 }
 
 static char s25flxxxl_verify(void * qspi_flash_device, unsigned long address, unsigned char * data, unsigned int size)
 {
-    const struct s25flxxxl * self = (const struct s25flxxxl *) qspi_flash_device;
     char result = 0;
 
-    spi_clock_high();
-    spi_cs_low();
-    spi_output_enable();
-    spi_tx_byte(0x6c);
-    spi_tx_byte(address >> 24);
-    spi_tx_byte(address >> 16);
-    spi_tx_byte(address >> 8);
-    spi_tx_byte(address >> 0);
-    spi_output_disable();
-    spi_idle_clocks(self->read_latency_cycles);
-    if (data == NULL)
+    if (data != NULL && size == 512)
     {
-        unsigned int i;
-
-        for (i = 0; i < size; ++i)
-        {
-            if (qspi_rx_byte() != 0)
-            {
-                result = -1;
-                break;
-            }
-        }
+        // Use hardware acceleration if possible.
+        result = hw_assisted_verify_512(address, data);
     }
     else
     {
-        unsigned int i;
+        const struct s25flxxxl * self = (const struct s25flxxxl *) qspi_flash_device;
 
-        for (i = 0; i < size; ++i)
+        spi_clock_high();
+        spi_cs_low();
+        spi_output_enable();
+        spi_tx_byte(0x6c);
+        spi_tx_byte(address >> 24);
+        spi_tx_byte(address >> 16);
+        spi_tx_byte(address >> 8);
+        spi_tx_byte(address >> 0);
+        spi_output_disable();
+        spi_idle_clocks(self->read_latency_cycles);
+        if (data == NULL)
         {
-            if (qspi_rx_byte() != data[i])
+            unsigned int i;
+
+            for (i = 0; i < size; ++i)
             {
-                result = -1;
-                break;
+                if (qspi_rx_byte() != 0)
+                {
+                    result = -1;
+                    break;
+                }
             }
         }
+        else
+        {
+            unsigned int i;
+
+            for (i = 0; i < size; ++i)
+            {
+                if (qspi_rx_byte() != data[i])
+                {
+                    result = -1;
+                    break;
+                }
+            }
+        }
+        spi_cs_high();
+        spi_clock_high();
     }
-    spi_cs_high();
-    spi_clock_high();
 
     return result;
 }
 
 static char s25flxxxl_erase(void * qspi_flash_device, enum qspi_flash_erase_block_size erase_block_size, unsigned long address)
 {
-    unsigned char spi_tx[5];
-
     (void) qspi_flash_device;
 
-    switch (erase_block_size)
+    // Use hardware acceleration if possible (4K and 64K sectors).
+    if (erase_block_size == qspi_flash_erase_block_size_4k || erase_block_size == qspi_flash_erase_block_size_64k)
     {
-    case qspi_flash_erase_block_size_4k:
-        spi_tx[0] = 0x21;
-        break;
-    case qspi_flash_erase_block_size_32k:
-        spi_tx[0] = 0x53;
-        break;
-    case qspi_flash_erase_block_size_64k:
-        spi_tx[0] = 0xdc;
-        break;
-    default:
-        return -1;
+        clear_status();
+        write_enable();
+        if (erase_block_size == qspi_flash_erase_block_size_4k)
+        {
+            hw_assisted_erase_parameter_sector(address);
+        }
+        else
+        {
+            hw_assisted_erase_sector(address);
+        }
+        return wait_status();
     }
 
-    spi_tx[1] = address >> 24;
-    spi_tx[2] = address >> 16;
-    spi_tx[3] = address >> 8;
-    spi_tx[4] = address >> 0;
+    // Use a software implementation for 32K sectors.
+    if (erase_block_size == qspi_flash_erase_block_size_32k)
+    {
+        unsigned char spi_tx[5];
 
-    clear_status();
-    write_enable();
-    spi_transaction(spi_tx, 5, NULL, 0);
+        spi_tx[0] = 0x53;
+        spi_tx[1] = address >> 24;
+        spi_tx[2] = address >> 16;
+        spi_tx[3] = address >> 8;
+        spi_tx[4] = address >> 0;
 
-    return wait_status();
+        clear_status();
+        write_enable();
+        spi_transaction(spi_tx, 5, NULL, 0);
+        return wait_status();
+    }
+
+    return -1;
 }
 
 static char s25flxxxl_program(void * qspi_flash_device, enum qspi_flash_page_size page_size, unsigned long address, const unsigned char * data)
@@ -364,22 +388,7 @@ static char s25flxxxl_program(void * qspi_flash_device, enum qspi_flash_page_siz
 
     clear_status();
     write_enable();
-    spi_clock_high();
-    spi_cs_low();
-    spi_output_enable();
-    spi_tx_byte(0x34);
-    spi_tx_byte(address >> 24);
-    spi_tx_byte(address >> 16);
-    spi_tx_byte(address >> 8);
-    spi_tx_byte(address >> 0);
-    for (i = 0; i < 256; ++i)
-    {
-        qspi_tx_byte(data[i]);
-    }
-    spi_output_disable();
-    spi_cs_high();
-    spi_clock_high();
-
+    hw_assisted_program_page_256(address, data);
     return wait_status();
 }
 
