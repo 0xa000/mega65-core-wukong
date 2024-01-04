@@ -55,6 +55,18 @@ entity container is
          porta_pins : inout std_logic_vector(7 downto 0);
          portb_pins : inout std_logic_vector(7 downto 0);
 
+         -- Direct joystick lines
+        fa_left  : in std_logic;
+        fa_right : in std_logic;
+        fa_up    : in std_logic;
+        fa_down  : in std_logic;
+        fa_fire  : in std_logic;
+        fb_left  : in std_logic;
+        fb_right : in std_logic;
+        fb_up    : in std_logic;
+        fb_down  : in std_logic;
+        fb_fire  : in std_logic;
+
          ---------------------------------------------------------------------------
          -- IO lines to QSPI config flash (used so that we can update bitstreams)
          ---------------------------------------------------------------------------
@@ -91,10 +103,10 @@ entity container is
          -------------------------------------------------------------------------
          -- Lines for the SDcard interface itself
          -------------------------------------------------------------------------
-         sdReset : out std_logic := '0';  -- must be 0 to power SD controller (cs_bo)
-         sdClock : out std_logic;       -- (sclk_o)
-         sdMOSI : out std_logic;      
-         sdMISO : in  std_logic;
+         --sdReset : out std_logic := '0';  -- must be 0 to power SD controller (cs_bo)
+         --sdClock : out std_logic;       -- (sclk_o)
+         --sdMOSI : out std_logic;
+         --sdMISO : in  std_logic;
 
          sd2Reset : out std_logic;
          sd2Clock : out std_logic;       -- (sclk_o)
@@ -356,18 +368,6 @@ architecture Behavioral of container is
   signal eth_rxdv : std_logic;
   signal eth_interrupt : std_logic;
   signal eth_clock : std_logic;  
-
-         -- Direct joystick lines
-  signal fa_left : std_logic := '1';
-  signal fa_right : std_logic := '1';
-  signal fa_up : std_logic := '1';
-  signal fa_down : std_logic := '1';
-  signal fa_fire : std_logic := '1';
-  signal fb_left : std_logic := '1';
-  signal fb_right : std_logic := '1';
-  signal fb_up : std_logic := '1';
-  signal fb_down : std_logic := '1';
-  signal fb_fire : std_logic := '1';
 
   signal iec_clk_en : std_logic := 'Z';
   signal iec_data_en : std_logic := 'Z';
@@ -821,10 +821,11 @@ begin
       -------------------------------------------------------------------------
       -- External one is bus 0, so that it has priority.
       -- Internal SD card:
-      cs_bo => sdReset,
-      sclk_o => sdClock,
-      mosi_o => sdMOSI,
-      miso_i => sdMISO,
+      --cs_bo => sdReset,
+      --sclk_o => sdClock,
+      --mosi_o => sdMOSI,
+      --miso_i => sdMISO,
+      miso_i => '1',
       -- External microSD
       cs2_bo => sd2reset,
       sclk2_o => sd2Clock,

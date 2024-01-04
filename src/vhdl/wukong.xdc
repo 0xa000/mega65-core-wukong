@@ -119,10 +119,10 @@ set_property -dict {PACKAGE_PIN V16 IOSTANDARD LVCMOS33} [get_ports led2       ]
 # SD-card interface.
 ################################################################################
 # Internal SD-card on PMOD (J10).
-set_property -dict {PACKAGE_PIN D5 IOSTANDARD LVCMOS33} [get_ports sdMOSI ];
-set_property -dict {PACKAGE_PIN G5 IOSTANDARD LVCMOS33} [get_ports sdClock];
-set_property -dict {PACKAGE_PIN G7 IOSTANDARD LVCMOS33} [get_ports sdReset];
-set_property -dict {PACKAGE_PIN G8 IOSTANDARD LVCMOS33} [get_ports sdMISO ];
+#set_property -dict {PACKAGE_PIN D5 IOSTANDARD LVCMOS33} [get_ports sdMOSI ];
+#set_property -dict {PACKAGE_PIN G5 IOSTANDARD LVCMOS33} [get_ports sdClock];
+#set_property -dict {PACKAGE_PIN G7 IOSTANDARD LVCMOS33} [get_ports sdReset];
+#set_property -dict {PACKAGE_PIN G8 IOSTANDARD LVCMOS33} [get_ports sdMISO ];
 
 # External SD-card on micro SD-card slot (J9).
 set_property -dict {PACKAGE_PIN J8 IOSTANDARD LVCMOS33} [get_ports sd2MOSI ];
@@ -167,3 +167,27 @@ set_property -dict {PACKAGE_PIN V18  IOSTANDARD LVCMOS33 DRIVE 16       } [get_p
 set_property -dict {PACKAGE_PIN U22  IOSTANDARD LVCMOS33 DRIVE 16       } [get_ports {porta_pins[2]}]; # J12:29 | IO_L12P_T1_MRCC_13
 set_property -dict {PACKAGE_PIN U21  IOSTANDARD LVCMOS33 DRIVE 16       } [get_ports {porta_pins[1]}]; # J12:31 | IO_L13P_T2_MRCC_13
 set_property -dict {PACKAGE_PIN T20  IOSTANDARD LVCMOS33 DRIVE 16       } [get_ports {porta_pins[7]}]; # J12:33 | IO_L15P_T2_DQS_13
+
+################################################################################
+# Control port 1 (PMOD) (J10).
+################################################################################
+set_property -dict {PACKAGE_PIN D5 IOSTANDARD LVCMOS33 PULLTYPE PULLUP} [get_ports fa_up   ]; # J10:1  | IO_L13N_T2_MRCC_35
+set_property -dict {PACKAGE_PIN G5 IOSTANDARD LVCMOS33 PULLTYPE PULLUP} [get_ports fa_left ]; # J10:2  | IO_L12P_T1_MRCC_35
+set_property -dict {PACKAGE_PIN E5 IOSTANDARD LVCMOS33 PULLTYPE PULLUP} [get_ports fa_down ]; # J10:7  | IO_L13P_T2_MRCC_35
+set_property -dict {PACKAGE_PIN E6 IOSTANDARD LVCMOS33 PULLTYPE PULLUP} [get_ports fa_right]; # J10:8  | IO_L1P_T0_AD4P_35
+set_property -dict {PACKAGE_PIN D6 IOSTANDARD LVCMOS33 PULLTYPE PULLUP} [get_ports fa_fire ]; # J10:9  | IO_L1N_T0_AD4N_35
+#set_property -dict {PACKAGE_PIN G7 IOSTANDARD LVCMOS33} [get_ports {pmod_j10[2]}]; # J10:3  | IO_L3N_T0_DQS_AD5N_35
+#set_property -dict {PACKAGE_PIN G8 IOSTANDARD LVCMOS33} [get_ports {pmod_j10[3]}]; # J10:4  | IO_L2N_T0_AD12N_35
+#set_property -dict {PACKAGE_PIN G6 IOSTANDARD LVCMOS33} [get_ports {pmod_j10[7]}]; # J10:10 | IO_L5N_T0_AD13N_35
+
+################################################################################
+# Control port 2 (PMOD) (J11).
+################################################################################
+set_property -dict {PACKAGE_PIN H4 IOSTANDARD LVCMOS33 PULLTYPE PULLUP} [get_ports fb_up   ]; # J11:1  | IO_L9N_T1_DQS_AD7N_35
+set_property -dict {PACKAGE_PIN F4 IOSTANDARD LVCMOS33 PULLTYPE PULLUP} [get_ports fb_left ]; # J11:2  | IO_L11N_T1_SRCC_35
+set_property -dict {PACKAGE_PIN J4 IOSTANDARD LVCMOS33 PULLTYPE PULLUP} [get_ports fb_down ]; # J11:7  | IO_L9P_T1_DQS_AD7P_35
+set_property -dict {PACKAGE_PIN G4 IOSTANDARD LVCMOS33 PULLTYPE PULLUP} [get_ports fb_right]; # J11:8  | IO_L11P_T1_SRCC_35
+set_property -dict {PACKAGE_PIN B4 IOSTANDARD LVCMOS33 PULLTYPE PULLUP} [get_ports fb_fire ]; # J11:9  | IO_L16P_T2_35
+#set_property -dict {PACKAGE_PIN A4 IOSTANDARD LVCMOS33} [get_ports {pmod_j11[2]}]; # J11:3  | IO_L16N_T2_35
+#set_property -dict {PACKAGE_PIN A5 IOSTANDARD LVCMOS33} [get_ports {pmod_j11[3]}]; # J11:4  | IO_L15N_T2_DQS_35
+#set_property -dict {PACKAGE_PIN B5 IOSTANDARD LVCMOS33} [get_ports {pmod_j11[7]}]; # J11:10 | IO_L15P_T2_DQS_35
