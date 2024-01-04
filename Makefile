@@ -925,6 +925,18 @@ MFLASH_CORE_LINK = $(MFLASH_QSPI_C) $(MFLASH_CORE_OBJ)
 MFLASH_SOLO_REQ = $(MFLASH_QSPI_H) $(MFLASH_SOLO_H) $(MFLASH_QSPI_C) $(MFLASH_SOLO_OBJ)
 MFLASH_SOLO_LINK = $(MFLASH_QSPI_C) $(MFLASH_SOLO_OBJ)
 
+MFLASH_QSPI_NEW_C = \
+	$(UTILDIR)/qspicommon-new.c \
+	$(UTILDIR)/qspireconfig.c
+
+MFLASH_QSPI_NEW_H = \
+	$(UTILDIR)/version.h \
+	$(UTILDIR)/qspicommon-new.h \
+	$(UTILDIR)/qspireconfig.h
+
+MFLASH_SOLO_NEW_REQ = $(MFLASH_QSPI_NEW_H) $(MFLASH_SOLO_H) $(MFLASH_QSPI_NEW_C) $(MFLASH_SOLO_OBJ)
+MFLASH_SOLO_NEW_LINK = $(MFLASH_QSPI_NEW_C) $(MFLASH_SOLO_OBJ)
+
 $(UTILDIR)/mf_screens.adr $(UTILDIR)/mf_screens.bin $(UTILDIR)/mf_screens.c $(UTILDIR)/mf_screens.h $(UTILDIR)/mf_screens_solo.c $(UTILDIR)/mf_screens_solo.h: $(UTILDIR)/megaflash.scr $(TOOLDIR)/screenbuilder.py
 	$(TOOLDIR)/screenbuilder.py $<
 
@@ -1005,6 +1017,16 @@ $(UTILDIR)/testqspihw.prg:       $(UTILDIR)/testqspihw.c $(MFLASH_SOLO_REQ) $(ME
 		--add-source -Ln $*.label --listing $*.list --mapfile $*.map \
 		-DSTANDALONE -DQSPI_FLASH_SLOT0 -DQSPI_ERASE_ZERO -DQSPI_FLASH_INSPECT -DQSPI_VERBOSE $< \
 		$(MFLASH_SOLO_LINK) $(MEGA65LIBCLIB)
+	$(call mbuild_sizecheck,43000,$@)
+
+# Example mflash variant based on the experimental flash API.
+$(UTILDIR)/mflash-new.prg:       $(UTILDIR)/megaflash-new.c $(MFLASH_SOLO_NEW_REQ) $(MEGA65LIBCLIB) $(CC65_DEPEND)
+	$(call mbuild_header,$@)
+	$(CL65NC) --config $(UTILDIR)/util-std.cfg \
+		$(MEGA65LIBCINC) -O -o $@ \
+		--add-source -Ln $*.label --listing $*.list --mapfile $*.map \
+		-DSTANDALONE -DQSPI_FLASH_SLOT0 -DQSPI_ERASE_ZERO -DQSPI_FLASH_INSPECT -DQSPI_VERBOSE $< \
+		$(MFLASH_SOLO_NEW_LINK) $(MEGA65LIBCLIB)
 	$(call mbuild_sizecheck,43000,$@)
 
 $(UTILDIR)/hyperramtest.prg:       $(UTILDIR)/hyperramtest.c $(MEGA65LIBCLIB) $(CC65_DEPEND)
