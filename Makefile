@@ -1029,6 +1029,16 @@ $(UTILDIR)/mflash-new.prg:       $(UTILDIR)/megaflash-new.c $(MFLASH_SOLO_NEW_RE
 		$(MFLASH_SOLO_NEW_LINK) $(MEGA65LIBCLIB)
 	$(call mbuild_sizecheck,43000,$@)
 
+# Stand-alone test program to test QSPI API on s25flxxxs chips.
+$(UTILDIR)/tests25flxxxs.prg:       $(UTILDIR)/tests25flxxxs.c $(MFLASH_SOLO_REQ) $(MEGA65LIBCLIB) $(CC65_DEPEND)
+	$(call mbuild_header,$@)
+	$(CL65NC) --config $(UTILDIR)/util-std.cfg \
+		$(MEGA65LIBCINC) -O -o $@ \
+		--add-source -Ln $*.label --listing $*.list --mapfile $*.map \
+		-DSTANDALONE -DQSPI_FLASH_SLOT0 -DQSPI_ERASE_ZERO -DQSPI_FLASH_INSPECT -DQSPI_VERBOSE $< \
+		$(MFLASH_SOLO_LINK) $(MEGA65LIBCLIB)
+	$(call mbuild_sizecheck,43000,$@)
+
 $(UTILDIR)/hyperramtest.prg:       $(UTILDIR)/hyperramtest.c $(MEGA65LIBCLIB) $(CC65_DEPEND)
 	$(call mbuild_header,$@)
 	$(CL65) $(MEGA65LIBCINC) -O -o $*.prg --mapfile $*.map $< $(MEGA65LIBCLIB)

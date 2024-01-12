@@ -6,6 +6,10 @@
 #include "qspihwassist.h"
 #include "qspibitbash.h"
 
+#ifdef QSPI_VERBOSE
+#include "mhexes.h"
+#endif
+
 static unsigned char read_status_register_1(void)
 {
     return spi_transaction_tx8rx8(0x05);
@@ -24,6 +28,11 @@ static unsigned char read_configuration_register_1(void)
 static void write_enable(void)
 {
     spi_transaction_tx8(0x06);
+}
+
+static void write_disable(void)
+{
+    spi_transaction_tx8(0x04);
 }
 
 static void clear_status_register(void)
@@ -85,6 +94,9 @@ static void clear_status(void)
             break;
         clear_status_register();
     }
+
+    // Clear write enable latch (WEL).
+    write_disable();
 }
 
 static char wait_status(void)
@@ -107,8 +119,10 @@ static char enable_quad_mode(void)
     spi_tx[2] = read_configuration_register_1();
     spi_tx[2] |= 0x02;
 
+    clear_status();
     write_enable();
     spi_transaction(spi_tx, 3, NULL, 0);
+
     return wait_status();
 }
 
@@ -174,6 +188,7 @@ static char s25flxxxs_reset(void * qspi_flash_device)
     spi_transaction_tx8(0xf0);
 
     usleep(10000);
+
     return 0;
 }
 
@@ -182,17 +197,30 @@ static char s25flxxxs_init(void * qspi_flash_device)
     struct s25flxxxs * self = (struct s25flxxxs *) qspi_flash_device;
     const uint8_t spi_tx[] = {0x9f};
     uint8_t spi_rx[44] = {0x00};
-    unsigned char sr1;
     unsigned char cr1;
     BOOL quad_mode_enabled;
 
+    // Software reset.
     if (s25flxxxs_reset(qspi_flash_device) != 0)
+    {
         return -1;
+    }
 
-    // Read RDID to confirm model and get density.
+#ifdef QSPI_VERBOSE
+    mhx_writef("Registers = %02X %02X %02X\n", read_status_register_1(), read_status_register_2(), read_configuration_register_1());
+#endif
+
+    // Read RDID to confirm manufacturer and model, and get density.
     spi_transaction(spi_tx, 1, spi_rx, 44);
+
+#ifdef QSPI_VERBOSE
+    mhx_writef("CFI = %02X %02X %02X %02X %02X %02X\n", spi_rx[0], spi_rx[1], spi_rx[2], spi_rx[3], spi_rx[4], spi_rx[42]);
+#endif
+
     if (spi_rx[0] != 0x01)
+    {
         return -1;
+    }
 
     if (spi_rx[1] == 0x20 && spi_rx[2] == 0x18)
     {
@@ -206,7 +234,7 @@ static char s25flxxxs_init(void * qspi_flash_device)
     }
     else if (spi_rx[1] == 0x02 && spi_rx[2] == 0x20)
     {
-        // 256 Mb
+        // 512 Mb
         self->num_64k_sectors = 1024;
     }
     else
@@ -264,14 +292,21 @@ static char s25flxxxs_init(void * qspi_flash_device)
         }
         cr1 = read_configuration_register_1();
         quad_mode_enabled = cr1 & 0x02;
+        if (!quad_mode_enabled)
+        {
+            return -1;
+        }
     }
 
-    if (!quad_mode_enabled)
-    {
-        return -1;
-    }
-
-    sr1 = read_status_register_1();
+#ifdef QSPI_VERBOSE
+    mhx_writef("Sectors (64K) = %d\n", self->num_64k_sectors);
+    mhx_writef("Sectors (4K) at top = %d\n", self->sectors_4k_at_top);
+    mhx_writef("Latency cycles = %d\n", self->read_latency_cycles);
+    mhx_writef("Uniform 256K sectors = %d\n", self->uniform_256K_sectors);
+    mhx_writef("Page size 512 = %d\n", self->page_size_512);
+    mhx_writef("Quad mode = %d\n", quad_mode_enabled ? 1 : 0);
+    mhx_writef("Registers = %02X %02X %02X\n", read_status_register_1(), read_status_register_2(), read_configuration_register_1());
+#endif
 
     return 0;
 }
@@ -370,6 +405,10 @@ static char s25flxxxs_erase(void * qspi_flash_device, enum qspi_flash_erase_bloc
             return -1;
         }
 
+#ifdef QSPI_VERBOSE
+        mhx_writef("Erase 256K sector.\n");
+#endif
+
         return erase_sector(address);
     }
     else
@@ -383,27 +422,39 @@ static char s25flxxxs_erase(void * qspi_flash_device, enum qspi_flash_erase_bloc
 
         erase_block_number_64k = address >> 16;
 
+#ifdef QSPI_VERBOSE
+        mhx_writef("Address = $%08lX\n", address);
+        mhx_writef("Erase block (64K) number = %u\n", erase_block_number_64k);
+#endif
+
         if ((self->sectors_4k_at_top && (erase_block_number_64k >= self->num_64k_sectors - 2)) || (erase_block_number_64k < 2))
         {
             unsigned char i;
+            char result = 0;
 
             address &= ~0xffffUL;
 
+#ifdef QSPI_VERBOSE
+            mhx_writef("Erase 16x4K sectors from $%08lX\n", address);
+#endif
+
             for (i = 0; i < 16; ++i)
             {
-                char result;
-
-                result = erase_4k_parameter_sector(address);
-                if (result != 0)
+                if ((result = erase_4k_parameter_sector(address)) != 0)
                 {
-                    return result;
+                    break;
                 }
 
                 address += 4096;
             }
+
+            return result;
         }
         else
         {
+#ifdef QSPI_VERBOSE
+            mhx_writef("Erase 64K sector.\n");
+#endif
             return erase_sector(address);
         }
     }

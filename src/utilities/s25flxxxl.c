@@ -6,6 +6,10 @@
 #include "qspihwassist.h"
 #include "qspibitbash.h"
 
+#ifdef QSPI_VERBOSE
+#include "mhexes.h"
+#endif
+
 static unsigned char read_status_register_1(void)
 {
     return spi_transaction_tx8rx8(0x05);
@@ -181,8 +185,18 @@ static char s25flxxxl_init(void * qspi_flash_device)
         return -1;
     }
 
+#ifdef QSPI_VERBOSE
+    mhx_writef("Registers = %02X %02X %02X %02X %02X\n", read_status_register_1(), read_status_register_2(), read_configuration_register_1(),
+        read_configuration_register_2(), read_configuration_register_3());
+#endif
+
     // Read RDID to confirm model and get density.
     spi_transaction(spi_tx, 1, spi_rx, 3);
+
+#ifdef QSPI_VERBOSE
+    mhx_writef("CFI = %02X %02X %02X\n", spi_rx[0], spi_rx[1], spi_rx[2]);
+#endif
+
     if (spi_rx[0] != 0x01 || spi_rx[1] != 0x60)
     {
         return -1;
@@ -224,6 +238,13 @@ static char s25flxxxl_init(void * qspi_flash_device)
             return -1;
         }
     }
+
+#ifdef QSPI_VERBOSE
+    mhx_writef("Flash size = %d MB\n", self->size);
+    mhx_writef("Quad mode = %d\n", quad_mode_enabled ? 1 : 0);
+    mhx_writef("Registers = %02X %02X %02X %02X %02X\n", read_status_register_1(), read_status_register_2(), read_configuration_register_1(),
+        read_configuration_register_2(), read_configuration_register_3());
+#endif
 
     return 0;
 }

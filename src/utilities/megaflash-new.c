@@ -810,11 +810,11 @@ void main(void)
 #endif
 // slot 0 flashing is only done with PRG and DIP 3!
 #if QSPI_FLASH_SLOT0
-    case 0x7e: // TILDE (MEGA-LT)
+    case 0xf7: // TILDE (MEGA-LT)
       // ask for confirmation
-      if (confirm_slot0_flash()) {
-        selected_reflash_slot = 0;
-      }
+      // if (confirm_slot0_flash()) {
+      selected_reflash_slot = 0;
+      // }
       redraw_menu = REDRAW_CLEAR;
       break;
 #endif
@@ -867,8 +867,8 @@ void main(void)
       //   mhx_flashscreen(MHX_A_RED, 150);
       //   continue;
       // }
-      if (selected_reflash_slot > 0)
-        edit_slot(selected_reflash_slot);
+      // if (selected_reflash_slot > 0)
+      edit_slot(selected_reflash_slot);
 #if 0
 #ifdef FIRMWARE_UPGRADE
       selected_file = MFS_FILE_INVALID;
