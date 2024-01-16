@@ -241,6 +241,7 @@ static char s25flxxxl_init(void * qspi_flash_device)
 
 #ifdef QSPI_VERBOSE
     mhx_writef("Flash size = %d MB\n", self->size);
+    mhx_writef("Latency cycles = %d\n", self->read_latency_cycles);
     mhx_writef("Quad mode = %d\n", quad_mode_enabled ? 1 : 0);
     mhx_writef("Registers = %02X %02X %02X %02X %02X\n", read_status_register_1(), read_status_register_2(), read_configuration_register_1(),
         read_configuration_register_2(), read_configuration_register_3());
