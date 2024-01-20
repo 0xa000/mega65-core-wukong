@@ -528,6 +528,10 @@ reset_machine_state:
         lda #$80
         sta sd_buffer_ctrl
 
+        ;; Disable all but the physical keyboard.
+        lda #$02
+        sta $d612
+
         ;; Access cartridge IO area to force EXROM probe on R1 PCBs
         ;; XXX DONT READ $DExx ! This is a known crash causer for Action Replay
         ;; cartridges.  $DF00 should be okay, however.
