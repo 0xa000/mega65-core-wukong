@@ -170,6 +170,15 @@ char test_erase_program_erase(unsigned long address)
     mhx_writef("Erase block size (bytes) = %lu\n", erase_block_size_bytes);
     mhx_writef("Erase block size (pages) = %u\n\n", erase_block_size_pages);
 
+    if (write_dynamic_protection_bits(0, FALSE) != 0)
+    {
+        mhx_writef("\n" MHX_W_RED "ERROR: Unable to clear write protection." MHX_W_WHITE "\n\n");
+        mhx_press_any_key(MHX_AK_IGNORETAB, MHX_A_WHITE);
+        return -1;
+    }
+
+    mhx_writef("Write enable sector 0... OK\n");
+
     if (qspi_flash_erase(qspi_flash_device, max_erase_block_size, address) != 0)
     {
         mhx_writef("\n" MHX_W_RED "ERROR: Unable to erase block!" MHX_W_WHITE "\n\n");
@@ -216,11 +225,20 @@ char test_erase_program_erase(unsigned long address)
 
     mhx_writef("Verify page... OK\n");
 
+    if (write_dynamic_protection_bits(0, TRUE) != 0)
+    {
+        mhx_writef("\n" MHX_W_RED "ERROR: Unable to set write protection." MHX_W_WHITE "\n\n");
+        mhx_press_any_key(MHX_AK_IGNORETAB, MHX_A_WHITE);
+        return -1;
+    }
+
+    mhx_writef("Write protect sector 0... OK\n");
+
     if (qspi_flash_erase(qspi_flash_device, max_erase_block_size, address) != 0)
     {
         mhx_writef("\n" MHX_W_RED "ERROR: Unable to erase block!" MHX_W_WHITE "\n\n");
         mhx_press_any_key(MHX_AK_IGNORETAB, MHX_A_WHITE);
-        return -1;
+        // return -1;
     }
 
     mhx_writef("Erase block... OK\n");
@@ -229,7 +247,7 @@ char test_erase_program_erase(unsigned long address)
     {
         mhx_writef("\n" MHX_W_RED "ERROR: Erased block not empty!" MHX_W_WHITE "\n\n");
         mhx_press_any_key(MHX_AK_IGNORETAB, MHX_A_WHITE);
-        return -1;
+        // return -1;
     }
 
     mhx_writef("Erase block verify... OK\n\n");

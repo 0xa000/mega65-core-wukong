@@ -143,6 +143,24 @@ static char erase_sector(unsigned long address)
     return wait_status();
 }
 
+char write_dynamic_protection_bits(unsigned long address, BOOL protect)
+{
+    unsigned char spi_tx[6];
+
+    spi_tx[0] = 0xe1;
+    spi_tx[1] = address >> 24;
+    spi_tx[2] = address >> 16;
+    spi_tx[3] = address >> 8;
+    spi_tx[4] = address >> 0;
+    spi_tx[5] = protect ? 0 : 255;
+
+    clear_status();
+    write_enable();
+    spi_transaction(spi_tx, 6, NULL, 0);
+
+    return wait_status();
+}
+
 struct s25flxxxs
 {
     // Interface.
