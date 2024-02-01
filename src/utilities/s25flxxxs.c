@@ -74,11 +74,6 @@ static BOOL write_in_progress(const struct s25flxxxs_status * status)
     return (status->sr1 & 0x01 ? TRUE : FALSE);
 }
 
-static BOOL busy(const struct s25flxxxs_status * status)
-{
-    return (status->sr1 & 0x03 ? TRUE : FALSE);
-}
-
 static BOOL error_occurred(const struct s25flxxxs_status * status)
 {
     return (status->sr1 & 0x60 ? TRUE : FALSE);
@@ -87,28 +82,46 @@ static BOOL error_occurred(const struct s25flxxxs_status * status)
 static void clear_status(void)
 {
     struct s25flxxxs_status status;
-    for (;;)
+
+    // In the event of an error, the flash chip remains busy. That is, the Write
+    // In Progress (WIP) bit in the status register remains set while the
+    // Program Error (P_ERR) bit and/or the Erase Error (E_ERR) bit in the
+    // status register is set. The Clear Status Register command resets both
+    // error bits, which in turn allows the WIP bit to clear.
+    //
+    // However, the Clear Status Register command does *not* affect the Write
+    // Enable Latch (WEL) bit. This bit needs to be cleared using the Write
+    // Disable command, which is ignored while the WIP bit is set.
+    //
+    // Therefore, the proper sequence is to issue the Clear Status Register to
+    // clear the error bits, allowing the WIP bit to clear, and then issue the
+    // Write Disable command to clear the WEL bit.
+
+    for (status = read_status(); error_occurred(&status) || write_in_progress(&status); status = read_status())
     {
-        status = read_status();
-        if (!busy(&status) && !error_occurred(&status))
-            break;
         clear_status_register();
     }
 
-    // Clear write enable latch (WEL).
-    write_disable();
+    for (status = read_status(); write_enabled(&status); status = read_status())
+    {
+        write_disable();
+    }
 }
 
 static char wait_status(void)
 {
     struct s25flxxxs_status status;
-    for (;;)
+
+    for (status = read_status(); write_enabled(&status) || write_in_progress(&status); status = read_status())
     {
-        status = read_status();
-        if (!busy(&status))
-            break;
+        if (error_occurred(&status))
+        {
+            clear_status();
+            return -1;
+        }
     }
-    return (error_occurred(&status) ? -1 : 0);
+
+    return 0;
 }
 
 static char enable_quad_mode(void)
