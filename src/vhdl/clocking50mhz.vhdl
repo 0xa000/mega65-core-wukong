@@ -8,268 +8,268 @@ use unisim.vcomponents.all;
 
 entity clocking50mhz is
    port (
+      reset       : in  std_logic;
+      locked      : out std_logic;
+
       -- Clock in ports
-      clk_in     : in  std_logic;
-      
+      clk_in      : in  std_logic;
+
       -- Clock out ports
-      clock27    : out std_logic;
-      clock41    : out std_logic;
-      clock50    : out std_logic;
-      clock81p   : out std_logic;
-      clock81n   : out std_logic;
-      clock100   : out std_logic;
-      clock135p  : out std_logic;
-      clock135n  : out std_logic;
-      clock270   : out std_logic;
-      clock162   : out std_logic;
-      clock200   : out std_logic;
-      clock324   : out std_logic
+      clock27     : out std_logic;
+      clock40_5   : out std_logic;
+      clock81     : out std_logic;
+      clock270    : out std_logic;
+      clock324    : out std_logic;
+      clock324p90 : out std_logic;
+      clock50     : out std_logic;
+      clock100    : out std_logic;
+      clock200    : out std_logic
    );
 end entity;
 
 
 architecture RTL of clocking50mhz is
 
-  signal clk_fb     : std_logic := '0';
-  signal clk_fb_adjust0     : std_logic := '0';
-  signal clk_fb_eth : std_logic := '0';
-  signal clock10125mhz : std_logic := '0';
+  signal clk_fb_clock54 : std_logic := '0';
+  signal clock54        : std_logic := '0';
+  signal clk_fb_cpu     : std_logic := '0';
+  signal clk_fb_eth     : std_logic := '0';
   
+  signal clock27_u     : std_logic;
+  signal clock40_5_u   : std_logic;
+  signal clock81_u     : std_logic;
+  signal clock270_u    : std_logic;
+  signal clock324_u    : std_logic;
+  signal clock324p90_u : std_logic;
+  signal clock50_u     : std_logic;
+  signal clock100_u    : std_logic;
+  signal clock200_u    : std_logic;
+
+  signal locked_mmce_clock54 : std_logic;
+  signal locked_pll_cpu      : std_logic;
+  signal locked_pll_eth      : std_logic;
+
 begin
 
-  -- We want 27MHz true pixel clock and various multiples
-  -- from out 50 or 100MHz input clock.
-  -- We can use the MMCME2_ADV improved clock fiddling factors
-  -- to easily get this.
-  -- 50 MHz x 20.250 / 10 = 506.25MHz / 5 = 101.25 MHz
-  -- 101.25MHz x 8 = 810MHz
-  -- 324MHz = 810 / 2.5
-  -- 162MHz = 810 / 5
-  -- 81MHz = 810 / 10
-  -- 40.5MHz = 810 / 20
-  -- 27MHz = 810 / 30
-  -- So we need only 2 MMCME2_ADV's to achieve this
+  -- We want a 27 MHz true pixel clock and various multiples from our 50 MHz or
+  -- 100 MHz input clock. We can use the MMCME2_ADV improved clock fiddling
+  -- factors to easily get this.
+  --
+  -- 50 MHz x 27 / 25 = 54 MHz
+  --
+  -- 54 MHz x 30 = 1620 MHz
+  --     /  5 = 324.0 MHz
+  --     /  6 = 270.0 MHz
+  --     / 10 = 162.0 MHz (not used)
+  --     / 20 =  81.0 MHz
+  --     / 40 =  40.5 MHz
+  --     / 60 =  27.0 MHz
 
-  adjust0 : MMCME2_ADV
-  generic map
-   (BANDWIDTH            => "OPTIMIZED",
-    CLKOUT4_CASCADE      => FALSE,
-    COMPENSATION         => "ZHOLD",
-    STARTUP_WAIT         => FALSE,
 
-    CLKIN1_PERIOD => 20.000,
-    
-    -- Create 506.25 MHz 
-    DIVCLK_DIVIDE        => 1,
-    -- For 100MHz input clock use 10.125 here instead of 20.250
-    CLKFBOUT_MULT_F      => 20.250,
-    CLKFBOUT_PHASE       => 0.000,
-    CLKFBOUT_USE_FINE_PS => FALSE,
+  MMCME2_BASE_clock54 : MMCME2_BASE
+  generic map (
+     BANDWIDTH => "OPTIMIZED",  -- Jitter programming (OPTIMIZED, HIGH, LOW)
+     CLKFBOUT_MULT_F => 27.0,    -- Multiply value for all CLKOUT (2.000-64.000).
+     CLKFBOUT_PHASE => 0.0,     -- Phase offset in degrees of CLKFB (-360.000-360.000).
+     CLKIN1_PERIOD => 20.0,      -- Input clock period in ns to ps resolution (i.e. 33.333 is 30 MHz).
+     -- CLKOUT0_DIVIDE - CLKOUT6_DIVIDE: Divide amount for each CLKOUT (1-128)
+     CLKOUT1_DIVIDE => 1,
+     CLKOUT2_DIVIDE => 1,
+     CLKOUT3_DIVIDE => 1,
+     CLKOUT4_DIVIDE => 1,
+     CLKOUT5_DIVIDE => 1,
+     CLKOUT6_DIVIDE => 1,
+     CLKOUT0_DIVIDE_F => 25.0,   -- Divide amount for CLKOUT0 (1.000-128.000).
+     -- CLKOUT0_DUTY_CYCLE - CLKOUT6_DUTY_CYCLE: Duty cycle for each CLKOUT (0.01-0.99).
+     CLKOUT0_DUTY_CYCLE => 0.5,
+     CLKOUT1_DUTY_CYCLE => 0.5,
+     CLKOUT2_DUTY_CYCLE => 0.5,
+     CLKOUT3_DUTY_CYCLE => 0.5,
+     CLKOUT4_DUTY_CYCLE => 0.5,
+     CLKOUT5_DUTY_CYCLE => 0.5,
+     CLKOUT6_DUTY_CYCLE => 0.5,
+     -- CLKOUT0_PHASE - CLKOUT6_PHASE: Phase offset for each CLKOUT (-360.000-360.000).
+     CLKOUT0_PHASE => 0.0,
+     CLKOUT1_PHASE => 0.0,
+     CLKOUT2_PHASE => 0.0,
+     CLKOUT3_PHASE => 0.0,
+     CLKOUT4_PHASE => 0.0,
+     CLKOUT5_PHASE => 0.0,
+     CLKOUT6_PHASE => 0.0,
+     CLKOUT4_CASCADE => FALSE,  -- Cascade CLKOUT4 counter with CLKOUT6 (FALSE, TRUE)
+     DIVCLK_DIVIDE => 1,        -- Master division value (1-106)
+     REF_JITTER1 => 0.0,        -- Reference input jitter in UI (0.000-0.999).
+     STARTUP_WAIT => FALSE      -- Delays DONE until MMCM is locked (FALSE, TRUE)
+  )
+  port map (
+     -- Clock Outputs: 1-bit (each) output: User configurable clock outputs
+     CLKOUT0 => clock54,     -- 1-bit output: CLKOUT0
+     -- Feedback Clocks: 1-bit (each) output: Clock feedback ports
+     CLKFBOUT => clk_fb_clock54,   -- 1-bit output: Feedback clock
+     CLKFBOUTB => open,      -- 1-bit output: Inverted CLKFBOUT
+     -- Status Ports: 1-bit (each) output: MMCM status ports
+     LOCKED => locked_mmce_clock54,         -- 1-bit output: LOCK
+     -- Clock Inputs: 1-bit (each) input: Clock input
+     CLKIN1 => clk_in,       -- 1-bit input: Clock
+     -- Control Ports: 1-bit (each) input: MMCM control ports
+     PWRDWN => '0',          -- 1-bit input: Power-down
+     RST => reset,             -- 1-bit input: Reset
+     -- Feedback Clocks: 1-bit (each) input: Clock feedback ports
+     CLKFBIN => clk_fb_clock54      -- 1-bit input: Feedback clock
+  );
 
-    -- CLKOUT0 = CLK_OUT1 = 506.25MHz/5 = 101.25MHz = clock10125mhz
-    CLKOUT0_DIVIDE_F     => 10.00,
-    CLKOUT0_PHASE        => 0.000,
-    CLKOUT0_DUTY_CYCLE   => 0.500,
-    CLKOUT0_USE_FINE_PS  => FALSE
-    )
+  --PLLE2_BASE_clock54 : PLLE2_BASE
+  --generic map (
+  --   BANDWIDTH => "OPTIMIZED",  -- OPTIMIZED, HIGH, LOW
+  --   CLKFBOUT_MULT => 27,       -- Multiply value for all CLKOUT, (2-64)
+  --   CLKFBOUT_PHASE => 0.0,     -- Phase offset in degrees of CLKFB, (-360.000-360.000).
+  --   CLKIN1_PERIOD => 20.000,   -- Input clock period in ns to ps resolution (i.e. 33.333 is 30 MHz).
+  --   -- CLKOUT0_DIVIDE - CLKOUT5_DIVIDE: Divide amount for each CLKOUT (1-128)
+  --   CLKOUT0_DIVIDE => 25,
+  --   CLKOUT1_DIVIDE => 1,
+  --   CLKOUT2_DIVIDE => 1,
+  --   CLKOUT3_DIVIDE => 1,
+  --   CLKOUT4_DIVIDE => 1,
+  --   CLKOUT5_DIVIDE => 1,
+  --   -- CLKOUT0_DUTY_CYCLE - CLKOUT5_DUTY_CYCLE: Duty cycle for each CLKOUT (0.001-0.999).
+  --   CLKOUT0_DUTY_CYCLE => 0.5,
+  --   CLKOUT1_DUTY_CYCLE => 0.5,
+  --   CLKOUT2_DUTY_CYCLE => 0.5,
+  --   CLKOUT3_DUTY_CYCLE => 0.5,
+  --   CLKOUT4_DUTY_CYCLE => 0.5,
+  --   CLKOUT5_DUTY_CYCLE => 0.5,
+  --   -- CLKOUT0_PHASE - CLKOUT5_PHASE: Phase offset for each CLKOUT (-360.000-360.000).
+  --   CLKOUT0_PHASE => 0.0,
+  --   CLKOUT1_PHASE => 0.0,
+  --   CLKOUT2_PHASE => 0.0,
+  --   CLKOUT3_PHASE => 0.0,
+  --   CLKOUT4_PHASE => 0.0,
+  --   CLKOUT5_PHASE => 0.0,
+  --   DIVCLK_DIVIDE => 1,        -- Master division value, (1-56)
+  --   REF_JITTER1 => 0.0,        -- Reference input jitter in UI, (0.000-0.999).
+  --   STARTUP_WAIT => "FALSE"    -- Delay DONE until PLL Locks, ("TRUE"/"FALSE")
+  --)
+  --port map (
+  --   -- Clock Outputs: 1-bit (each) output: User configurable clock outputs
+  --   CLKOUT0 => clock54,   -- 1-bit output: CLKOUT0
+  --   -- Feedback Clocks: 1-bit (each) output: Clock feedback ports
+  --   CLKFBOUT => clk_fb_clock54, -- 1-bit output: Feedback clock
+  --   LOCKED => open,     -- 1-bit output: LOCK
+  --   CLKIN1 => clk_in,     -- 1-bit input: Input clock
+  --   -- Control Ports: 1-bit (each) input: PLL control ports
+  --   PWRDWN => '0',     -- 1-bit input: Power-down
+  --   RST => '0',           -- 1-bit input: Reset
+  --   -- Feedback Clocks: 1-bit (each) input: Clock feedback ports
+  --   CLKFBIN => clk_fb_clock54    -- 1-bit input: Feedback clock
+  --);
 
-  port map
-    -- Output clocks
-   (
-     CLKFBOUT            => clk_fb_adjust0,
-     CLKOUT0             => clock10125mhz,
-     -- Input clock control
-     CLKFBIN             => clk_fb_adjust0,
-     CLKIN1              => clk_in,
-     CLKIN2              => '0',
-     -- Tied to always select the primary input clock
-     CLKINSEL            => '1',
-     -- Ports for dynamic reconfiguration
-     DADDR               => (others => '0'),
-     DCLK                => '0',
-     DEN                 => '0',
-     DI                  => (others => '0'),
-     DWE                 => '0',
-     -- Ports for dynamic phase shift
-     PSCLK               => '0',
-     PSEN                => '0',
-     PSINCDEC            => '0',
-     -- Other control and status signals
-     PWRDWN              => '0',
-     RST                 => '0');
+  PLLE2_BASE_cpu : PLLE2_BASE
+  generic map (
+     BANDWIDTH => "OPTIMIZED",  -- OPTIMIZED, HIGH, LOW
+     CLKFBOUT_MULT => 30,       -- Multiply value for all CLKOUT, (2-64)
+     CLKFBOUT_PHASE => 0.0,     -- Phase offset in degrees of CLKFB, (-360.000-360.000).
+     CLKIN1_PERIOD => 18.519,   -- Input clock period in ns to ps resolution (i.e. 33.333 is 30 MHz).
+     -- CLKOUT0_DIVIDE - CLKOUT5_DIVIDE: Divide amount for each CLKOUT (1-128)
+     CLKOUT0_DIVIDE => 5,
+     CLKOUT1_DIVIDE => 5,
+     CLKOUT2_DIVIDE => 6,
+     CLKOUT3_DIVIDE => 20,
+     CLKOUT4_DIVIDE => 40,
+     CLKOUT5_DIVIDE => 60,
+     -- CLKOUT0_DUTY_CYCLE - CLKOUT5_DUTY_CYCLE: Duty cycle for each CLKOUT (0.001-0.999).
+     CLKOUT0_DUTY_CYCLE => 0.5,
+     CLKOUT1_DUTY_CYCLE => 0.5,
+     CLKOUT2_DUTY_CYCLE => 0.5,
+     CLKOUT3_DUTY_CYCLE => 0.5,
+     CLKOUT4_DUTY_CYCLE => 0.5,
+     CLKOUT5_DUTY_CYCLE => 0.5,
+     -- CLKOUT0_PHASE - CLKOUT5_PHASE: Phase offset for each CLKOUT (-360.000-360.000).
+     CLKOUT0_PHASE => 0.0,
+     CLKOUT1_PHASE => 90.0,
+     CLKOUT2_PHASE => 0.0,
+     CLKOUT3_PHASE => 0.0,
+     CLKOUT4_PHASE => 0.0,
+     CLKOUT5_PHASE => 0.0,
+     DIVCLK_DIVIDE => 1,        -- Master division value, (1-56)
+     REF_JITTER1 => 0.0,        -- Reference input jitter in UI, (0.000-0.999).
+     STARTUP_WAIT => "FALSE"    -- Delay DONE until PLL Locks, ("TRUE"/"FALSE")
+  )
+  port map (
+     -- Clock Outputs: 1-bit (each) output: User configurable clock outputs
+     CLKOUT0 => clock324_u,    -- 1-bit output: CLKOUT0
+     CLKOUT1 => clock324p90_u, -- 1-bit output: CLKOUT1
+     CLKOUT2 => clock270_u,    -- 1-bit output: CLKOUT2
+     CLKOUT3 => clock81_u,     -- 1-bit output: CLKOUT3
+     CLKOUT4 => clock40_5_u,   -- 1-bit output: CLKOUT4
+     CLKOUT5 => clock27_u,     -- 1-bit output: CLKOUT5
+     -- Feedback Clocks: 1-bit (each) output: Clock feedback ports
+     CLKFBOUT => clk_fb_cpu, -- 1-bit output: Feedback clock
+     LOCKED => locked_pll_cpu,     -- 1-bit output: LOCK
+     CLKIN1 => clock54,     -- 1-bit input: Input clock
+     -- Control Ports: 1-bit (each) input: PLL control ports
+     PWRDWN => '0',     -- 1-bit input: Power-down
+     RST => reset,           -- 1-bit input: Reset
+     -- Feedback Clocks: 1-bit (each) input: Clock feedback ports
+     CLKFBIN => clk_fb_cpu    -- 1-bit input: Feedback clock
+  );
 
-  mmcm_adv0 : MMCME2_ADV
-  generic map
-   (BANDWIDTH            => "OPTIMIZED",
-    CLKOUT4_CASCADE      => FALSE,
-    COMPENSATION         => "ZHOLD",
-    STARTUP_WAIT         => FALSE,
-
-    -- Create 810MHz clock from 101.25MHz x 8 / 
-    DIVCLK_DIVIDE        => 1,
-    CLKFBOUT_MULT_F      => 8.000,
-    CLKFBOUT_PHASE       => 0.000,
-    CLKFBOUT_USE_FINE_PS => FALSE,
-
-    -- CLKOUT0 = CLK_OUT1 = clock324 = 810MHz/2.5
-    CLKOUT0_DIVIDE_F     => 2.50,
-    CLKOUT0_PHASE        => 0.000,
-    CLKOUT0_DUTY_CYCLE   => 0.500,
-    CLKOUT0_USE_FINE_PS  => FALSE,
-
-    -- CLKOUT1 = CLK_OUT2 = clock135 ~= 810MHz/6
-    CLKOUT1_DIVIDE       => 6,
-    CLKOUT1_PHASE        => 0.000,
-    CLKOUT1_DUTY_CYCLE   => 0.500,
-    CLKOUT1_USE_FINE_PS  => FALSE,
-
-    -- CLKOUT2 = CLK_OUT3 = clock81 ~= 810MHz/10
-    CLKOUT2_DIVIDE       => 10,
-    CLKOUT2_PHASE        => 0.000,
-    CLKOUT2_DUTY_CYCLE   => 0.500,
-    CLKOUT2_USE_FINE_PS  => FALSE,
-
-    -- CLKOUT3 = CLK_OUT4 = clock41 ~= 810MHz/20
-    CLKOUT3_DIVIDE       => 20,
-    CLKOUT3_PHASE        => 0.000,
-    CLKOUT3_DUTY_CYCLE   => 0.500,
-    CLKOUT3_USE_FINE_PS  => FALSE,
-
-    -- CLKOUT4 = CLK_OUT5 = clock27 = 810MHz/30 = 27
-    CLKOUT4_DIVIDE       => 30,
-    CLKOUT4_PHASE        => 0.000,
-    CLKOUT4_DUTY_CYCLE   => 0.500,
-    CLKOUT4_USE_FINE_PS  => FALSE,
-    
-    -- CLKOUT5 = CLK_OUT6 = clock162 - 810MHz/5
-    CLKOUT5_DIVIDE       => 5,
-    CLKOUT5_PHASE        => 0.0,
-    CLKOUT5_DUTY_CYCLE   => 0.500,
-    CLKOUT5_USE_FINE_PS  => FALSE,
-
-    -- CLKOUT6 = clock270 = 270MHz
-    CLKOUT6_DIVIDE       => 3,
-    CLKOUT6_PHASE        => 0.000,
-    CLKOUT6_DUTY_CYCLE   => 0.500,
-    CLKOUT6_USE_FINE_PS  => FALSE,
-
-    REF_JITTER1          => 0.010)
-  port map
-    -- Output clocks
-   (CLKFBOUT            => clk_fb,
-    CLKOUT0             => clock324,
-    CLKOUT1             => clock135p,
-    CLKOUT1B            => clock135n,
-    CLKOUT2             => clock81p,
-    CLKOUT2B            => clock81n,
-    CLKOUT3             => clock41,
-    CLKOUT4             => clock27,
-    CLKOUT5             => clock162,
-    CLKOUT6             => clock270,
-    -- Input clock control
-    CLKFBIN             => clk_fb,
-    CLKIN1              => clock10125mhz,
-    CLKIN2              => '0',
-    -- Tied to always select the primary input clock
-    CLKINSEL            => '1',
-    -- Ports for dynamic reconfiguration
-    DADDR               => (others => '0'),
-    DCLK                => '0',
-    DEN                 => '0',
-    DI                  => (others => '0'),
-    DWE                 => '0',
-    -- Ports for dynamic phase shift
-    PSCLK               => '0',
-    PSEN                => '0',
-    PSINCDEC            => '0',
-    -- Other control and status signals
-    PWRDWN              => '0',
-    RST                 => '0');
+  PLLE2_BASE_eth : PLLE2_BASE
+  generic map (
+     BANDWIDTH => "OPTIMIZED",  -- OPTIMIZED, HIGH, LOW
+     CLKFBOUT_MULT => 20,       -- Multiply value for all CLKOUT, (2-64)
+     CLKFBOUT_PHASE => 0.0,     -- Phase offset in degrees of CLKFB, (-360.000-360.000).
+     CLKIN1_PERIOD => 20.000,   -- Input clock period in ns to ps resolution (i.e. 33.333 is 30 MHz).
+     -- CLKOUT0_DIVIDE - CLKOUT5_DIVIDE: Divide amount for each CLKOUT (1-128)
+     CLKOUT0_DIVIDE => 20,
+     CLKOUT1_DIVIDE => 10,
+     CLKOUT2_DIVIDE => 5,
+     CLKOUT3_DIVIDE => 1,
+     CLKOUT4_DIVIDE => 1,
+     CLKOUT5_DIVIDE => 1,
+     -- CLKOUT0_DUTY_CYCLE - CLKOUT5_DUTY_CYCLE: Duty cycle for each CLKOUT (0.001-0.999).
+     CLKOUT0_DUTY_CYCLE => 0.5,
+     CLKOUT1_DUTY_CYCLE => 0.5,
+     CLKOUT2_DUTY_CYCLE => 0.5,
+     CLKOUT3_DUTY_CYCLE => 0.5,
+     CLKOUT4_DUTY_CYCLE => 0.5,
+     CLKOUT5_DUTY_CYCLE => 0.5,
+     -- CLKOUT0_PHASE - CLKOUT5_PHASE: Phase offset for each CLKOUT (-360.000-360.000).
+     CLKOUT0_PHASE => 0.0,
+     CLKOUT1_PHASE => 0.0,
+     CLKOUT2_PHASE => 0.0,
+     CLKOUT3_PHASE => 0.0,
+     CLKOUT4_PHASE => 0.0,
+     CLKOUT5_PHASE => 0.0,
+     DIVCLK_DIVIDE => 1,        -- Master division value, (1-56)
+     REF_JITTER1 => 0.0,        -- Reference input jitter in UI, (0.000-0.999).
+     STARTUP_WAIT => "FALSE"    -- Delay DONE until PLL Locks, ("TRUE"/"FALSE")
+  )
+  port map (
+     -- Clock Outputs: 1-bit (each) output: User configurable clock outputs
+     CLKOUT0 => clock50_u,   -- 1-bit output: CLKOUT0
+     CLKOUT1 => clock100_u,  -- 1-bit output: CLKOUT1
+     CLKOUT2 => clock200_u,  -- 1-bit output: CLKOUT2
+     -- Feedback Clocks: 1-bit (each) output: Clock feedback ports
+     CLKFBOUT => clk_fb_eth, -- 1-bit output: Feedback clock
+     LOCKED => locked_pll_eth,     -- 1-bit output: LOCK
+     CLKIN1 => clk_in,     -- 1-bit input: Input clock
+     -- Control Ports: 1-bit (each) input: PLL control ports
+     PWRDWN => '0',     -- 1-bit input: Power-down
+     RST => reset,           -- 1-bit input: Reset
+     -- Feedback Clocks: 1-bit (each) input: Clock feedback ports
+     CLKFBIN => clk_fb_eth    -- 1-bit input: Feedback clock
+  );
   
-  mmcm_adv1_eth : MMCME2_ADV
-  generic map
-   (BANDWIDTH            => "OPTIMIZED",
-    CLKOUT4_CASCADE      => FALSE,
-    COMPENSATION         => "ZHOLD",
-    STARTUP_WAIT         => FALSE,
+  bufg_clock27     : BUFG port map ( I => clock27_u    , O => clock27     );
+  bufg_clock40_5   : BUFG port map ( I => clock40_5_u  , O => clock40_5   );
+  bufg_clock81     : BUFG port map ( I => clock81_u    , O => clock81     );
+  bufg_clock270    : BUFG port map ( I => clock270_u   , O => clock270    );
+  bufg_clock324    : BUFG port map ( I => clock324_u   , O => clock324    );
+  bufg_clock324p90 : BUFG port map ( I => clock324p90_u, O => clock324p90 );
+  bufg_clock50     : BUFG port map ( I => clock50_u    , O => clock50     );
+  bufg_clock100    : BUFG port map ( I => clock100_u   , O => clock100    );
+  bufg_clock200    : BUFG port map ( I => clock200_u   , O => clock200    );
 
-    -- Create 800.0MHz clock from 16.000x50MHz/1
-    DIVCLK_DIVIDE        => 1,
-    CLKFBOUT_MULT_F      => 16.000,
-    CLKFBOUT_PHASE       => 0.000,
-    CLKFBOUT_USE_FINE_PS => FALSE,
+  locked <= locked_mmce_clock54 and locked_pll_cpu and locked_pll_eth;
 
-    -- CLKOUT0 = CLK_OUT1 = clock100 = 800MHz/8.0
-    CLKOUT0_DIVIDE_F     => 8.0,
-    CLKOUT0_PHASE        => 0.000,
-    CLKOUT0_DUTY_CYCLE   => 0.500,
-    CLKOUT0_USE_FINE_PS  => FALSE,
-
-    -- CLKOUT1 = CLK_OUT2 = clock50 = 800MHz/16
-    CLKOUT1_DIVIDE       => 16,
-    CLKOUT1_PHASE        => 0.000,
-    CLKOUT1_DUTY_CYCLE   => 0.500,
-    CLKOUT1_USE_FINE_PS  => FALSE,
-
-    -- CLKOUT2 = CLKOUT3 = clock200 = 800MHz/4
-    CLKOUT2_DIVIDE       => 4,
-    CLKOUT2_PHASE        => 0.000,
-    CLKOUT2_DUTY_CYCLE   => 0.500,
-    CLKOUT2_USE_FINE_PS  => FALSE,
-    
-    -- CLKOUT3 = UNUSED
-    CLKOUT3_DIVIDE       => 20,
-    CLKOUT3_PHASE        => 0.000,
-    CLKOUT3_DUTY_CYCLE   => 0.500,
-    CLKOUT3_USE_FINE_PS  => FALSE,
-
-    -- CLKOUT4 = UNUSED
-    CLKOUT4_DIVIDE       => 10,
-    CLKOUT4_PHASE        => 0.000,
-    CLKOUT4_DUTY_CYCLE   => 0.500,
-    CLKOUT4_USE_FINE_PS  => FALSE,
-
-    -- CLKOUT5 = UNUSED
-    CLKOUT5_DIVIDE       => 5,
-    CLKOUT5_PHASE        => 0.0,
-    CLKOUT5_DUTY_CYCLE   => 0.500,
-    CLKOUT5_USE_FINE_PS  => FALSE,
-
-    -- CLKOUT6 = UNUSED
-    CLKOUT6_DIVIDE       => 5,
-    CLKOUT6_PHASE        => 0.000,
-    CLKOUT6_DUTY_CYCLE   => 0.500,
-    CLKOUT6_USE_FINE_PS  => FALSE,
-    CLKIN1_PERIOD        => 10.000,
-    REF_JITTER1          => 0.010)
-  port map
-    -- Output clocks
-    (
-    CLKFBOUT            => clk_fb_eth,
-    CLKOUT0             => clock100,
-    CLKOUT1             => clock50,
-    CLKOUT2             => clock200,
-    -- Input clock control
-    CLKFBIN             => clk_fb_eth,
-    CLKIN1              => clk_in,
-    CLKIN2              => '0',
-    -- Tied to always select the primary input clock
-    CLKINSEL            => '1',
-    -- Ports for dynamic reconfiguration
-    DADDR               => (others => '0'),
-    DCLK                => '0',
-    DEN                 => '0',
-    DI                  => (others => '0'),
-    DWE                 => '0',
-    -- Ports for dynamic phase shift
-    PSCLK               => '0',
-    PSEN                => '0',
-    PSINCDEC            => '0',
-    -- Other control and status signals
-    PWRDWN              => '0',
-    RST                 => '0');
-
-  
-
-  
 end rtl;

@@ -17,14 +17,14 @@ create_clock -period 20.000 [get_ports clk_in];
 ################################################################################
 # Clock and timing constraints.
 ################################################################################
-create_generated_clock -name clock81p [get_pins clocks/mmcm_adv0/CLKOUT2]
-create_generated_clock -name clock41  [get_pins clocks/mmcm_adv0/CLKOUT3]
-create_generated_clock -name clock27  [get_pins clocks/mmcm_adv0/CLKOUT4]
-create_generated_clock -name clock270 [get_pins clocks/mmcm_adv0/CLKOUT6]
-create_generated_clock -name clock60  [get_pins AUDIO_TONE/CLOCK/MMCM/CLKOUT1]
+create_generated_clock -name clock81   [get_pins clocks/PLLE2_BASE_cpu/CLKOUT3]
+create_generated_clock -name clock40_5 [get_pins clocks/PLLE2_BASE_cpu/CLKOUT4]
+create_generated_clock -name clock27   [get_pins clocks/PLLE2_BASE_cpu/CLKOUT5]
+create_generated_clock -name clock270  [get_pins clocks/PLLE2_BASE_cpu/CLKOUT2]
+create_generated_clock -name clock60   [get_pins AUDIO_TONE/CLOCK/MMCM/CLKOUT1]
 
 # Fix 12.288MHz clock generation clock domain crossing.
-set_false_path -from [get_clocks clock41] -to [get_clocks clock60]
+set_false_path -from [get_clocks clock40_5] -to [get_clocks clock60]
 
 ################################################################################
 # QSPI flash
@@ -44,8 +44,8 @@ set_property -dict {PACKAGE_PIN M6  IOSTANDARD LVCMOS33} [get_ports restore_key 
 ################################################################################
 # LEDs.
 ################################################################################
-set_property -dict {PACKAGE_PIN V17 IOSTANDARD LVCMOS33} [get_ports led         ];
-#set_property -dict {PACKAGE_PIN V16 IOSTANDARD LVCMOS33} [get_ports led2        ];
+set_property -dict {PACKAGE_PIN V17 IOSTANDARD LVCMOS33} [get_ports led0];
+set_property -dict {PACKAGE_PIN V16 IOSTANDARD LVCMOS33} [get_ports led1];
 
 ################################################################################
 # Internal SD-card interface.
@@ -124,3 +124,58 @@ set_property -dict {PACKAGE_PIN B4 IOSTANDARD LVCMOS33 PULLTYPE PULLUP} [get_por
 #set_property -dict {PACKAGE_PIN A4 IOSTANDARD LVCMOS33} [get_ports {pmod_j11[2]}]; # J11:3  | IO_L16N_T2_35
 #set_property -dict {PACKAGE_PIN A5 IOSTANDARD LVCMOS33} [get_ports {pmod_j11[3]}]; # J11:4  | IO_L15N_T2_DQS_35
 #set_property -dict {PACKAGE_PIN B5 IOSTANDARD LVCMOS33} [get_ports {pmod_j11[7]}]; # J11:10 | IO_L15P_T2_DQS_35
+
+# DDR3 256MB (Micron MT41K128M16JT-125:K).
+set_property -dict {PACKAGE_PIN E17 IOSTANDARD SSTL135      SLEW FAST} [get_ports {ddr3_addr[0]} ];
+set_property -dict {PACKAGE_PIN G17 IOSTANDARD SSTL135      SLEW FAST} [get_ports {ddr3_addr[1]} ];
+set_property -dict {PACKAGE_PIN F17 IOSTANDARD SSTL135      SLEW FAST} [get_ports {ddr3_addr[2]} ];
+set_property -dict {PACKAGE_PIN C17 IOSTANDARD SSTL135      SLEW FAST} [get_ports {ddr3_addr[3]} ];
+set_property -dict {PACKAGE_PIN G16 IOSTANDARD SSTL135      SLEW FAST} [get_ports {ddr3_addr[4]} ];
+set_property -dict {PACKAGE_PIN D16 IOSTANDARD SSTL135      SLEW FAST} [get_ports {ddr3_addr[5]} ];
+set_property -dict {PACKAGE_PIN H16 IOSTANDARD SSTL135      SLEW FAST} [get_ports {ddr3_addr[6]} ];
+set_property -dict {PACKAGE_PIN E16 IOSTANDARD SSTL135      SLEW FAST} [get_ports {ddr3_addr[7]} ];
+set_property -dict {PACKAGE_PIN H14 IOSTANDARD SSTL135      SLEW FAST} [get_ports {ddr3_addr[8]} ];
+set_property -dict {PACKAGE_PIN F15 IOSTANDARD SSTL135      SLEW FAST} [get_ports {ddr3_addr[9]} ];
+set_property -dict {PACKAGE_PIN F20 IOSTANDARD SSTL135      SLEW FAST} [get_ports {ddr3_addr[10]}];
+set_property -dict {PACKAGE_PIN H15 IOSTANDARD SSTL135      SLEW FAST} [get_ports {ddr3_addr[11]}];
+set_property -dict {PACKAGE_PIN C18 IOSTANDARD SSTL135      SLEW FAST} [get_ports {ddr3_addr[12]}];
+set_property -dict {PACKAGE_PIN G15 IOSTANDARD SSTL135      SLEW FAST} [get_ports {ddr3_addr[13]}];
+set_property -dict {PACKAGE_PIN B17 IOSTANDARD SSTL135      SLEW FAST} [get_ports {ddr3_ba[0]}   ];
+set_property -dict {PACKAGE_PIN D18 IOSTANDARD SSTL135      SLEW FAST} [get_ports {ddr3_ba[1]}   ];
+set_property -dict {PACKAGE_PIN A17 IOSTANDARD SSTL135      SLEW FAST} [get_ports {ddr3_ba[2]}   ];
+set_property -dict {PACKAGE_PIN B19 IOSTANDARD SSTL135      SLEW FAST} [get_ports {ddr3_cas_n}   ];
+set_property -dict {PACKAGE_PIN F19 IOSTANDARD DIFF_SSTL135 SLEW FAST} [get_ports {ddr3_clk_n}   ];
+set_property -dict {PACKAGE_PIN F18 IOSTANDARD DIFF_SSTL135 SLEW FAST} [get_ports {ddr3_clk_p}   ];
+set_property -dict {PACKAGE_PIN E18 IOSTANDARD SSTL135      SLEW FAST} [get_ports {ddr3_cke}     ];
+set_property -dict {PACKAGE_PIN A22 IOSTANDARD SSTL135      SLEW FAST} [get_ports {ddr3_dm[0]}   ];
+set_property -dict {PACKAGE_PIN C22 IOSTANDARD SSTL135      SLEW FAST} [get_ports {ddr3_dm[1]}   ];
+set_property -dict {PACKAGE_PIN D21 IOSTANDARD SSTL135      SLEW FAST IN_TERM UNTUNED_SPLIT_50} [get_ports {ddr3_dq[0]}   ];
+set_property -dict {PACKAGE_PIN C21 IOSTANDARD SSTL135      SLEW FAST IN_TERM UNTUNED_SPLIT_50} [get_ports {ddr3_dq[1]}   ];
+set_property -dict {PACKAGE_PIN B22 IOSTANDARD SSTL135      SLEW FAST IN_TERM UNTUNED_SPLIT_50} [get_ports {ddr3_dq[2]}   ];
+set_property -dict {PACKAGE_PIN B21 IOSTANDARD SSTL135      SLEW FAST IN_TERM UNTUNED_SPLIT_50} [get_ports {ddr3_dq[3]}   ];
+set_property -dict {PACKAGE_PIN D19 IOSTANDARD SSTL135      SLEW FAST IN_TERM UNTUNED_SPLIT_50} [get_ports {ddr3_dq[4]}   ];
+set_property -dict {PACKAGE_PIN E20 IOSTANDARD SSTL135      SLEW FAST IN_TERM UNTUNED_SPLIT_50} [get_ports {ddr3_dq[5]}   ];
+set_property -dict {PACKAGE_PIN C19 IOSTANDARD SSTL135      SLEW FAST IN_TERM UNTUNED_SPLIT_50} [get_ports {ddr3_dq[6]}   ];
+set_property -dict {PACKAGE_PIN D20 IOSTANDARD SSTL135      SLEW FAST IN_TERM UNTUNED_SPLIT_50} [get_ports {ddr3_dq[7]}   ];
+set_property -dict {PACKAGE_PIN C23 IOSTANDARD SSTL135      SLEW FAST IN_TERM UNTUNED_SPLIT_50} [get_ports {ddr3_dq[8]}   ];
+set_property -dict {PACKAGE_PIN D23 IOSTANDARD SSTL135      SLEW FAST IN_TERM UNTUNED_SPLIT_50} [get_ports {ddr3_dq[9]}   ];
+set_property -dict {PACKAGE_PIN B24 IOSTANDARD SSTL135      SLEW FAST IN_TERM UNTUNED_SPLIT_50} [get_ports {ddr3_dq[10]}  ];
+set_property -dict {PACKAGE_PIN B25 IOSTANDARD SSTL135      SLEW FAST IN_TERM UNTUNED_SPLIT_50} [get_ports {ddr3_dq[11]}  ];
+set_property -dict {PACKAGE_PIN C24 IOSTANDARD SSTL135      SLEW FAST IN_TERM UNTUNED_SPLIT_50} [get_ports {ddr3_dq[12]}  ];
+set_property -dict {PACKAGE_PIN C26 IOSTANDARD SSTL135      SLEW FAST IN_TERM UNTUNED_SPLIT_50} [get_ports {ddr3_dq[13]}  ];
+set_property -dict {PACKAGE_PIN A25 IOSTANDARD SSTL135      SLEW FAST IN_TERM UNTUNED_SPLIT_50} [get_ports {ddr3_dq[14]}  ];
+set_property -dict {PACKAGE_PIN B26 IOSTANDARD SSTL135      SLEW FAST IN_TERM UNTUNED_SPLIT_50} [get_ports {ddr3_dq[15]}  ];
+set_property -dict {PACKAGE_PIN A20 IOSTANDARD DIFF_SSTL135 SLEW FAST IN_TERM UNTUNED_SPLIT_50} [get_ports {ddr3_dqs_n[0]}];
+set_property -dict {PACKAGE_PIN B20 IOSTANDARD DIFF_SSTL135 SLEW FAST IN_TERM UNTUNED_SPLIT_50} [get_ports {ddr3_dqs_p[0]}];
+set_property -dict {PACKAGE_PIN A24 IOSTANDARD DIFF_SSTL135 SLEW FAST IN_TERM UNTUNED_SPLIT_50} [get_ports {ddr3_dqs_n[1]}];
+set_property -dict {PACKAGE_PIN A23 IOSTANDARD DIFF_SSTL135 SLEW FAST IN_TERM UNTUNED_SPLIT_50} [get_ports {ddr3_dqs_p[1]}];
+set_property -dict {PACKAGE_PIN G19 IOSTANDARD SSTL135      SLEW FAST} [get_ports {ddr3_odt}     ];
+set_property -dict {PACKAGE_PIN A19 IOSTANDARD SSTL135      SLEW FAST} [get_ports {ddr3_ras_n}   ];
+set_property -dict {PACKAGE_PIN H17 IOSTANDARD SSTL135      SLEW FAST} [get_ports {ddr3_reset_n} ];
+set_property -dict {PACKAGE_PIN A18 IOSTANDARD SSTL135      SLEW FAST} [get_ports {ddr3_we_n}    ];
+
+set_property INTERNAL_VREF 0.675 [get_iobanks 16]
+
+## Place the IOSERDES_train manually (else the tool will place this blocks which can block the route for CLKB0 (OBUFDS for ddr3_clk_p))
+set_property LOC OLOGIC_X0Y91 [get_cells {sdramctrl0/ddr3_ram/ddr3_phy_inst/genblk5[1].OSERDESE2_train}]
+set_property LOC ILOGIC_X0Y94 [get_cells {sdramctrl0/ddr3_ram/ddr3_phy_inst/genblk5[0].ISERDESE2_train}]

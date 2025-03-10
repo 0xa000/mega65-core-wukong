@@ -62,6 +62,22 @@ entity container is
     qspi_db  : inout unsigned(3 downto 0);
     qspi_csn : out   std_logic;
 
+    -- DDR3 memory.
+    ddr3_clk_p   : out   std_logic;
+    ddr3_clk_n   : out   std_logic;
+    ddr3_reset_n : out   std_logic;
+    ddr3_cke     : out   std_logic;
+    ddr3_ras_n   : out   std_logic;
+    ddr3_cas_n   : out   std_logic;
+    ddr3_we_n    : out   std_logic;
+    ddr3_addr    : out   std_logic_vector(13 downto 0);
+    ddr3_ba      : out   std_logic_vector(2 downto 0);
+    ddr3_dq      : inout std_logic_vector(15 downto 0);
+    ddr3_dqs_p   : inout std_logic_vector(1 downto 0);
+    ddr3_dqs_n   : inout std_logic_vector(1 downto 0);
+    ddr3_dm      : out   std_logic_vector(1 downto 0);
+    ddr3_odt     : out   std_logic;
+
     -- Internal SD-card.
     int_sd_reset : out std_logic;
     int_sd_clock : out std_logic;
@@ -73,7 +89,8 @@ entity container is
     rsrx     : in  std_logic;
 
     -- Debug LEDs.
-    led : inout std_logic
+    led0 : out std_logic;
+    led1 : out std_logic
   );
 end container;
 
@@ -87,6 +104,9 @@ architecture Behavioral of container is
   signal pixelclock           : std_logic;
   signal clock27              : std_logic;
   signal clock270             : std_logic;
+  signal clock200             : std_logic;
+  signal clock324             : std_logic;
+  signal clock324p90          : std_logic;
   signal sector_buffer_mapped : std_logic;
   signal fpga_temperature     : std_logic_vector(11 downto 0) := (others => '0');
 
@@ -143,6 +163,10 @@ architecture Behavioral of container is
   signal slow_access_wdata          : unsigned(7 downto 0);
   signal slow_access_rdata          : unsigned(7 downto 0);
 
+  signal slow_prefetched_address : unsigned(26 downto 0);
+  signal slow_prefetched_data : unsigned(7 downto 0);
+  signal slow_prefetched_request_toggle : std_logic;
+
   -- CBM floppy serial port (not supported).
   signal iec_clk_en  : std_logic := 'Z';
   signal iec_data_en : std_logic := 'Z';
@@ -164,6 +188,31 @@ architecture Behavioral of container is
   signal cart_io1  : std_logic             := 'Z';
   signal cart_io2  : std_logic             := 'Z';
   signal cart_a    : unsigned(15 downto 0) := (others => 'Z');
+
+  -- Expansion RAM.
+  signal expansionram_read : std_logic;
+  signal expansionram_write : std_logic;
+  signal expansionram_rdata : unsigned(7 downto 0);
+  signal expansionram_wdata : unsigned(7 downto 0);
+  signal expansionram_address : unsigned(26 downto 0);
+  signal expansionram_data_ready_toggle : std_logic;
+  signal expansionram_busy : std_logic;
+  signal expansionram_stuck : std_logic;
+
+  signal expansionram_current_cache_line : cache_row_t := (others => (others => '0'));
+  signal expansionram_current_cache_line_address : unsigned(26 downto 3) := (others => '0');
+  signal expansionram_current_cache_line_valid : std_logic := '0';
+  signal expansionram_current_cache_line_next_toggle : std_logic := '0';
+  signal expansionram_current_cache_line_prev_toggle : std_logic := '0';
+
+  signal expansionram_calib_complete : std_logic := '0';
+
+  signal sdram_ack : std_logic := '0';
+  signal sdram_stall : std_logic := '0';
+
+  signal clocks_locked : std_logic := '0';
+  signal master_reset : std_logic := '0';
+  signal button_reset : std_logic := '1';
 
 begin
 
@@ -190,15 +239,26 @@ begin
       USRDONETS => '1'         -- 1-bit input: User DONE 3-state enable output DISABLE
     );
 
+  button_reset <= not reset_button;
+
   -- Clocks.
   clocks : entity work.clocking50mhz
     port map(
-      clk_in   => clk_in,
-      clock27  => clock27,    --   27   MHz
-      clock41  => cpuclock,   --   40.5 MHz
-      clock81p => pixelclock, --   81   MHz
-      clock270 => clock270    --  270   MHz
+      reset       => button_reset,
+      locked      => clocks_locked,
+      clk_in      => clk_in,
+      clock27     => clock27,
+      clock40_5   => cpuclock,
+      clock81     => pixelclock,
+      clock270    => clock270,
+      clock324    => clock324,
+      clock324p90 => clock324p90,
+      clock50     => open,
+      clock100    => open,
+      clock200    => clock200
     );
+
+  master_reset <= button_reset or (not clocks_locked);
 
   -- Measure FPGA die temperature.
   fpgatemp0 : entity work.fpgatemp
@@ -283,6 +343,59 @@ begin
       );
   end generate GEN_HDMI_DATA;
 
+  -- DDR3 SDRAM as expansion RAM.
+  sdramctrl0: entity work.sdram_controller_wukong
+    port map (
+      reset => master_reset,
+      pixelclock => pixelclock,
+      clock200 => clock200,
+      clock324 => clock324,
+      clock324p90 => clock324p90,
+      --identical_clocks => sdram_slow_clock,
+
+      -- XXX Debug by showing if expansion RAM unit is receiving requests or not
+      --request_counter => led,
+
+      --viciv_addr => hyper_addr,
+      --viciv_request_toggle => hyper_request_toggle,
+      --viciv_data_out => sdram_data,
+      --viciv_data_strobe => sdram_data_strobe,
+
+      read_request => expansionram_read,
+      write_request => expansionram_write,
+      address => expansionram_address,
+      wdata => expansionram_wdata,
+      rdata => expansionram_rdata,
+      data_ready_toggle => expansionram_data_ready_toggle,
+      busy => expansionram_busy,
+      stuck => expansionram_stuck,
+
+      current_cache_line => expansionram_current_cache_line,
+      current_cache_line_address => expansionram_current_cache_line_address,
+      current_cache_line_valid => expansionram_current_cache_line_valid,
+      expansionram_current_cache_line_next_toggle  => expansionram_current_cache_line_next_toggle,
+      expansionram_current_cache_line_prev_toggle  => expansionram_current_cache_line_prev_toggle,
+
+      sdram_clk_p   => ddr3_clk_p  ,
+      sdram_clk_n   => ddr3_clk_n  ,
+      sdram_reset_n => ddr3_reset_n,
+      sdram_cke     => ddr3_cke    ,
+      sdram_ras_n   => ddr3_ras_n  ,
+      sdram_cas_n   => ddr3_cas_n  ,
+      sdram_we_n    => ddr3_we_n   ,
+      sdram_addr    => ddr3_addr   ,
+      sdram_ba      => ddr3_ba     ,
+      sdram_dq      => ddr3_dq     ,
+      sdram_dqs_p   => ddr3_dqs_p  ,
+      sdram_dqs_n   => ddr3_dqs_n  ,
+      sdram_dm      => ddr3_dm     ,
+      sdram_odt     => ddr3_odt    ,
+
+      calib_complete => expansionram_calib_complete,
+      sdram_ack => sdram_ack,
+      sdram_stall => sdram_stall
+      );
+
   -- Slow device manager.
   slow_devices0 : entity work.slow_devices
     generic map(
@@ -291,7 +404,7 @@ begin
     port map(
       cpuclock             => cpuclock,
       pixelclock           => pixelclock,
-      reset                => reset_out,
+      reset                => master_reset,
       sector_buffer_mapped => sector_buffer_mapped,
 
       -- Slow device bus.
@@ -302,9 +415,22 @@ begin
       slow_access_wdata          => slow_access_wdata,
       slow_access_rdata          => slow_access_rdata,
 
+      slow_prefetched_address => slow_prefetched_address,
+      slow_prefetched_data => slow_prefetched_data,
+      slow_prefetched_request_toggle => slow_prefetched_request_toggle,
+
       -- Expansion RAM interface (upto 127MB)
-      expansionram_data_ready_toggle => '1',
-      expansionram_busy              => '1',
+      expansionram_data_ready_toggle => expansionram_data_ready_toggle,
+      expansionram_busy => expansionram_busy,
+      expansionram_read => expansionram_read,
+      expansionram_write => expansionram_write,
+      expansionram_address => expansionram_address,
+      expansionram_rdata => expansionram_rdata,
+      expansionram_wdata => expansionram_wdata,
+
+      expansionram_current_cache_line => expansionram_current_cache_line,
+      expansionram_current_cache_line_address => expansionram_current_cache_line_address,
+--      expansionram_current_cache_line_valid => current_cache_line_valid,
 
       -- Expansion / cartridge port.
       cart_nmi   => 'Z',
@@ -376,6 +502,16 @@ begin
       slow_access_write          => slow_access_write,
       slow_access_wdata          => slow_access_wdata,
       slow_access_rdata          => slow_access_rdata,
+
+      slow_prefetched_address        => slow_prefetched_address,
+      slow_prefetched_data           => slow_prefetched_data,
+      slow_prefetched_request_toggle => slow_prefetched_request_toggle,
+
+      slowram_cache_line            => expansionram_current_cache_line,
+      slowram_cache_line_valid      => expansionram_current_cache_line_valid,
+      slowram_cache_line_addr       => expansionram_current_cache_line_address,
+      slowram_cache_line_inc_toggle => expansionram_current_cache_line_next_toggle,
+      slowram_cache_line_dec_toggle => expansionram_current_cache_line_prev_toggle,
 
       -- CIA1 ports (physical keyboard and joysticks).
       porta_pins    => porta_pins,
@@ -546,6 +682,14 @@ begin
   h_audio_left  <= audio_left  when portp_drive(7) = '0' else ((not audio_left (19)) & audio_left (18 downto 0));
 
   -- LED on main board (active low).
-  led <= not portp_drive(4);
+  -- LED0 = V17 = D5 = Closest to pin header (J12)    (active LOW)
+  -- LED1 = V16 = D6 = Furthest from pin header (J12) (active LOW)
+  led0 <= not expansionram_busy;  -- LED0 shows status of expansionram_busy
+  led1 <= not expansionram_stuck; -- LED1 shows status of expansionram_stuck
+
+  --led1 <= not sdram_stall;       -- LED1 shows status of sdram_stall
+
+  --led <= not expansionram_calib_complete;
+  --led2 <= expansionram_calib_complete;
 
 end Behavioral;

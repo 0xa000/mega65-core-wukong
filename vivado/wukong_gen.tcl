@@ -193,7 +193,7 @@ set files [list \
  "[file normalize "$origin_dir/src/vhdl/neotrng.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/fast_divide.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/sdram.vhdl"]"\
- "[file normalize "$origin_dir/src/vhdl/sdram_controller.vhdl"]"\
+ "[file normalize "$origin_dir/src/vhdl/sdram_controller_wukong.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/hyperram.vhdl"]"\
  "[file normalize "$origin_dir/src/verilog/hyper_xface.v"]"\
  "[file normalize "$origin_dir/src/vhdl/vfpga/overlay_IP.vhdl"]"\
@@ -264,7 +264,10 @@ set files [list \
  "[file normalize "$origin_dir/src/verilog/phase_generator.v"]"\
  "[file normalize "$origin_dir/src/verilog/syn_fifo.v"]"\
  "[file normalize "$origin_dir/src/verilog/tremolo.v"]"\
- "[file normalize "$origin_dir/src/verilog/vibrato.v"]"
+ "[file normalize "$origin_dir/src/verilog/vibrato.v"]"\
+ "[file normalize "$origin_dir/src/verilog/ddr3_top_wukong.v"]"\
+ "[file normalize "$origin_dir/src/verilog/ddr3_controller.v"]"\
+ "[file normalize "$origin_dir/src/verilog/ddr3_phy.v"]"
 
 ]
 set imported_files [add_files -fileset sources_1 $files]
@@ -686,7 +689,7 @@ set file "vhdl/sdram.vhdl"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "VHDL" -objects $file_obj
 
-set file "vhdl/sdram_controller.vhdl"
+set file "vhdl/sdram_controller_wukong.vhdl"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "VHDL" -objects $file_obj
 
@@ -919,6 +922,18 @@ set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "Verilog" -objects $file_obj
 
 set file "verilog/vibrato.v"
+set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
+set_property -name "file_type" -value "Verilog" -objects $file_obj
+
+set file "verilog/ddr3_top_wukong.v"
+set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
+set_property -name "file_type" -value "Verilog" -objects $file_obj
+
+set file "verilog/ddr3_controller.v"
+set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
+set_property -name "file_type" -value "Verilog" -objects $file_obj
+
+set file "verilog/ddr3_phy.v"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "Verilog" -objects $file_obj
 
