@@ -1,3 +1,15 @@
+NOTE: This is a community fork of the MEGA65 project for the Wukong FPGA
+board. It includes DDR3 controller files from the UberDDR3 project
+(https://github.com/AngeloJacobo/UberDDR3), which are licensed under the
+GNU General Public License v3 (GPLv3). As a result, this combined fork is
+distributed under the GPLv3. The full text of the GPLv3 can be found at:
+https://www.gnu.org/licenses/gpl-3.0.txt
+
+The original MEGA65 VHDL source files remain under the GNU Lesser General
+Public License v3 (LGPLv3), reproduced below. The UberDDR3 files
+(src/verilog/ddr3_phy.v, src/verilog/ddr3_controller.v, and
+src/verilog/ddr3_top_wukong.v) are under GPLv3 as stated in their file headers.
+
 Unless otherwise marked, the VHDL source files of the MEGA65 are released
 under the GNU Lesser General Public License, which is reproduced below.
 

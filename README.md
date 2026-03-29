@@ -1,3 +1,16 @@
+# MEGA65 Wukong Fork — with DDR3 Attic RAM
+
+This is a community fork of the [MEGA65 project](https://github.com/MEGA65/mega65-core)
+adding DDR3 SDRAM support (attic RAM) for the Wukong FPGA board, using the
+[UberDDR3](https://github.com/AngeloJacobo/UberDDR3) open-source DDR3 controller.
+
+**License note:** This fork includes GPLv3-licensed files from UberDDR3. As a result,
+this combined work is distributed under the **GNU General Public License v3 (GPLv3)**.
+The original MEGA65 sources remain under LGPLv3. Due to this license difference,
+these changes cannot be merged back into the upstream MEGA65 project.
+
+---
+
 # MEGA65 = Enhanced C65 running in FPGA.
 
 Refer to "[./docs/index.md](./docs/index.md)" for the index file of the main DOC documentation.  
