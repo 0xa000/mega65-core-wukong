@@ -15,15 +15,25 @@ set_false_path -to [get_cells vga*]
 ## Accept sub-optimal clock placement
 set_property CLOCK_DEDICATED_ROUTE FALSE [get_nets clocks1/CLKOUT0]
 
-## Make Ethernet clocks unrelated to other clocks to avoid erroneous timing
-## violations, and hopefully make everything synthesise faster.
-set_clock_groups -asynchronous \
-     -group { cpuclock hdmi_clk_OBUF vdac_clk_OBUF clock162 clock325 } \
-     -group { CLKFBOUT clk_fb_eth clock100 clock200 eth_clock_OBUF } \
+## Name the generated clocks (same clocking entity and instance name as the
+## mega65r3 target, so same MMCM pins). The previous constraints here used
+## clock names from an older clocking architecture that no longer exist, so
+## the asynchronous groups silently stopped applying and the ethernet/CPU
+## crossings were being timed (at around -15ns).
+create_generated_clock -name clock325 [get_pins clocks1/mmcm_adv0/CLKOUT0]
+create_generated_clock -name clock81p [get_pins clocks1/mmcm_adv0/CLKOUT2]
+create_generated_clock -name clock41  [get_pins clocks1/mmcm_adv0/CLKOUT3]
+create_generated_clock -name clock27  [get_pins clocks1/mmcm_adv0/CLKOUT4]
+create_generated_clock -name clock163 [get_pins clocks1/mmcm_adv0/CLKOUT5]
 
-# Deal with more false paths crossing ethernet / cpu clock domains
-set_false_path -from [get_clocks cpuclock] -to [get_clocks ethclock]
-set_false_path -from [get_clocks ethclock] -to [get_clocks cpuclock]
+create_generated_clock -name clock50  [get_pins clocks1/mmcm_adv1_eth/CLKOUT1]
+create_generated_clock -name clock200 [get_pins clocks1/mmcm_adv1_eth/CLKOUT2]
+
+## Make Ethernet clocks unrelated to other clocks: the domain crossings are
+## protected in the design (see comment at clocks1 instantiation).
+set_clock_groups -asynchronous \
+     -group { clock41 clock81p clock27 clock163 clock325 } \
+     -group { clock50 clock200 }
 
 
 ## Switches
