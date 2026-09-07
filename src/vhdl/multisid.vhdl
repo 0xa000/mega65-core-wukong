@@ -42,7 +42,15 @@ architecture rtl of multisid is
   signal mux_addr : unsigned(11 downto 0);
   signal filt_data_o : std_logic_vector(7 downto 0);
   signal data_buf : std_logic_vector(7 downto 0);
-  signal reset_buffer, reset_stage1 : std_logic := '1';
+  -- One registered reset copy per SID instance, so each replica can be
+  -- placed near the block it drives instead of one register fanning out
+  -- to every voice across the die. dont_touch stops synthesis merging them.
+  signal reset_left, reset_right, reset_front, reset_back : std_logic := '1';
+  attribute dont_touch : string;
+  attribute dont_touch of reset_left  : signal is "true";
+  attribute dont_touch of reset_right : signal is "true";
+  attribute dont_touch of reset_front : signal is "true";
+  attribute dont_touch of reset_back  : signal is "true";
   
   ----------------------------------------------------------------------------------------------------------------------
   -- Functions
@@ -183,7 +191,7 @@ begin  -- architecture rtl
       port map (
         clk_1MHz => phi0_1mhz,
         cpuclock => cpuclock,
-        reset => reset_buffer,
+        reset => reset_left,
         cs => leftsid_cs,
         loopback => reg_loopback_cs,
         mode => sid_mode(0),
@@ -211,7 +219,7 @@ begin  -- architecture rtl
       port map (
         clk_1MHz => phi0_1mhz,
         cpuclock => cpuclock,
-        reset => reset_buffer,
+        reset => reset_right,
         cs => rightsid_cs,
         loopback => reg_loopback_cs,
         mode => sid_mode(1),
@@ -239,7 +247,7 @@ begin  -- architecture rtl
       port map (
         clk_1MHz => phi0_1mhz,
         cpuclock => cpuclock,
-        reset => reset_buffer,
+        reset => reset_front,
         cs => frontsid_cs,
         loopback => reg_loopback_cs,
         mode => sid_mode(2),
@@ -267,7 +275,7 @@ begin  -- architecture rtl
       port map (
         clk_1MHz => phi0_1mhz,
         cpuclock => cpuclock,
-        reset => reset_buffer,
+        reset => reset_back,
         cs => backsid_cs,
         loopback => reg_loopback_cs,
         mode => sid_mode(3),
@@ -316,9 +324,10 @@ begin  -- architecture rtl
         rightsid_panr,
         backsid_panr
         );
-      -- reset_stage1 <= reset_high;
-      -- reset_buffer <= reset_stage1;
-      reset_buffer <= reset_high;
+      reset_left  <= reset_high;
+      reset_right <= reset_high;
+      reset_front <= reset_high;
+      reset_back  <= reset_high;
     end if;
   end process main;
   data_o <= data_buf;
