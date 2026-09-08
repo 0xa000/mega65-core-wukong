@@ -82,12 +82,14 @@ architecture tacoma_narrows of sdram_controller is
 
   signal last_data_ready_toggle : std_logic := '0';
 
-  -- XXX Don't configure SDRAM by default, while I debug why it sometimes
-  -- powers up in wrong state.
-  signal sdram_prepped         : std_logic             := '1';
+  signal sdram_prepped         : std_logic             := '0';
   -- The SDRAM requires a 100us setup time
   signal sdram_100us_countdown : integer               := 16_200;
-  signal sdram_do_init         : std_logic             := '1';
+  -- Held off until the 100usec delay has expired (or immediately when
+  -- enforce_100us_delay is false, for simulation). Writing any non-RAM
+  -- address ($C00xxxx) re-runs the initialisation sequence; the number of
+  -- runs is readable at $C000007.
+  signal sdram_do_init         : std_logic             := '0';
   signal sdram_init_phase      : integer range 0 to 63 := 0;
 
   type sdram_cmd_t is (CMD_NOP, CMD_SET_MODE_REG,
@@ -192,6 +194,13 @@ architecture tacoma_narrows of sdram_controller is
   signal active_row_addr      : unsigned(25 downto 11) := (others => '0');
 
   signal resets : unsigned(7 downto 0) := x"00";
+
+  -- Last-read-line cache: rdata_line keeps the most recent 8-byte burst
+  -- anyway, so remembering which line it holds lets us serve repeated
+  -- reads of that line from IDLE without touching the SDRAM array.
+  -- Coherence: any latched write to the cached line invalidates it.
+  signal read_line_addr  : unsigned(26 downto 3) := (others => '0');
+  signal read_line_valid : std_logic := '0';
 
   signal sdram_dq_out : unsigned(15 downto 0);
   signal sdram_dq_oe_n : std_logic_vector(15 downto 0);
@@ -358,10 +367,17 @@ begin
         write_latched <= '1';
         latched_addr  <= address;
         wdata_latched <= wdata;
+        if address(26 downto 3) = read_line_addr then
+          read_line_valid <= '0';
+        end if;
         if rdata_16en = '1' then
           wdata_hi_latched <= wdata_hi;
+          -- The latched_wen_* signals carry DQM polarity ('1' = mask the
+          -- byte, see the non-16-bit path below). Per the port convention
+          -- wen_lo is already inverted (active low) but wen_hi is active
+          -- high, so it must be inverted here.
           latched_wen_lo   <= wen_lo;
-          latched_wen_hi   <= wen_hi;
+          latched_wen_hi   <= not wen_hi;
         else
           wdata_hi_latched <= wdata;
           latched_wen_lo   <= address(0);
@@ -532,7 +548,17 @@ begin
                 if write_latched = '1' then
                   report "SDRAMWRITE: Starting write: $" & to_hexstring(latched_addr) & " <= $" & to_hexstring(wdata_latched);
                 end if;
-                if active_row = '0' then
+                if read_latched = '1' and read_line_valid = '1'
+                  and latched_addr(26 downto 3) = read_line_addr then
+                  -- Read-line cache hit: rdata_line already holds this line,
+                  -- so publish it without an SDRAM transaction.
+                  report "SDRAMREAD: Read-line cache hit for $" & to_hexstring(latched_addr);
+                  sdram_emit_command(CMD_NOP);
+                  read_complete_strobe <= '1';
+                  read_latched         <= '0';
+                  report "BUSY: Clearing after read-line cache hit";
+                  busy                 <= '0';
+                elsif active_row = '0' then
                   report "ACTIVATEROW: No row open yet, so opening before read or write for row $" & to_hexstring(latched_addr)
                     & " = %" & to_string(std_logic_vector(latched_addr));
                   -- If no active row, then activate one
@@ -648,10 +674,12 @@ begin
             if write_latched = '1' then
               report "SDRAM: Issuing WRITE command after ROW_ACTIVATE";
               sdram_state <= WRITE_1;
+              -- Keep the write data driven (set up in ACTIVATE_WAIT_1);
+              -- reads must leave the bus released.
+              sdram_dq_out(7 downto 0)  <= wdata_latched;
+              sdram_dq_out(15 downto 8) <= wdata_hi_latched;
+              sdram_dq_oe_n             <= (others => '0');
             end if;
-            sdram_dq_out(7 downto 0)  <= wdata_latched;
-            sdram_dq_out(15 downto 8) <= wdata_hi_latched;
-            sdram_dq_oe_n             <= (others => '0');
           when READ_WAIT =>
             read_jobs  <= read_jobs + 1;
             sdram_dqml <= '0'; sdram_dqmh <= '0';
@@ -688,6 +716,8 @@ begin
           when READ_4 =>
             report "READ4: sdram_dq_latched = $" & to_hexstring(sdram_dq_latched);
             rdata_line(63 downto 48) <= sdram_dq_latched;
+            read_line_addr           <= latched_addr(26 downto 3);
+            read_line_valid          <= '1';
             read_complete_strobe     <= '1';
             read_latched             <= '0';
             report "BUSY: Clearing after read";
