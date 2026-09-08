@@ -456,6 +456,37 @@ begin
         sdram_read(2,x"7856");   -- still a cache hit
         sdram_read(64*1024*1024+5,x"0202");
 
+      elsif run("Write-combining cache merges writes and flushes correctly") then
+        wait_for_sdram_ready;
+
+        -- Fill line 0: all eight writes merge into the write cache
+        sdram_write(0,x"12");
+        sdram_write(1,x"34");
+        sdram_write(2,x"56");
+        sdram_write(3,x"78");
+        sdram_write(4,x"9a");
+        sdram_write(5,x"bc");
+        sdram_write(6,x"de");
+        sdram_write(7,x"f0");
+        -- write_jobs counts flushes: none have happened yet
+        sdram_read(64*1024*1024+6,x"0000");
+
+        -- A write to a different line misses the dirty line and flushes it
+        sdram_write(64,x"77");
+        sdram_write(65,x"88");   -- merges into the newly adopted line
+        sdram_read(64*1024*1024+6,x"0101");
+
+        -- Line 0 must have been written back in full (all four words)
+        sdram_read(0,x"3412");
+        sdram_read(2,x"7856");
+        sdram_read(4,x"bc9a");
+        sdram_read(6,x"f0de");
+
+        -- Reading the still-dirty line flushes it first (partial line:
+        -- only word 0 is dirty, words 1-3 are skipped)
+        sdram_read(64,x"8877");
+        sdram_read(64*1024*1024+6,x"0202");
+
       end if;
     end loop;
     test_runner_cleanup(runner);
