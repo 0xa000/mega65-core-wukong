@@ -272,6 +272,7 @@ begin
       )
     port map (
       mathclock                     => clock41,
+      divclock                      => clock162,
       Clock                         => clock41,
       phi_1mhz                      => phi_1mhz,
       phi_2mhz                      => phi_2mhz,

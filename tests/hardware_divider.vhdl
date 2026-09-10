@@ -85,13 +85,19 @@ begin
       div_n <= to_unsigned(n, 32);
       div_d <= to_unsigned(d, 32);
       div_start_over <= '1';
-      for tick in 1 to 16 loop
+      -- The divider now runs on the 4x CPU clock; a division takes 28 fast
+      -- cycles (plus input sampling), i.e. 7 CPU cycles, same as before.
+      -- Hold start_over for 4 ticks like the CPU does, to also exercise the
+      -- single-trigger arming logic.
+      for tick in 1 to 40 loop
         clock <= '0'; wait for 10 ns;
         clock <= '1'; wait for 10 ns;
-        div_start_over <= '0';
+        if tick >= 4 then
+          div_start_over <= '0';
+        end if;
       end loop;
       assert div_busy='0'
-        report "Divider still busy after 16 clocks";
+        report "Divider still busy after 40 clocks";
       if div_q > res_slv then
         diff := div_q - res_slv;
       end if;

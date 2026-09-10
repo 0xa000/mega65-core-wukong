@@ -1127,6 +1127,7 @@ begin
       virtualised_hardware => virtualised_hardware_sig,
       chipselect_enables => chipselect_enables,
       mathclock => cpuclock,
+      divclock => clock162,
       clock => cpuclock,
       reset =>reset_combined,
       reset_out => reset_out,

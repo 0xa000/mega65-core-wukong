@@ -45,6 +45,8 @@ entity gs4510 is
     target : mega65_target_t := mega65r2);
   port (
     mathclock : in std_logic;
+    -- 4x CPU clock, phase-aligned with Clock, for the hardware divider
+    divclock : in std_logic;
     Clock : in std_logic;
     phi_1mhz : in std_logic;
     phi_2mhz : in std_logic;
@@ -1523,6 +1525,11 @@ architecture Behavioural of gs4510 is
   signal div_q : unsigned(63 downto 0);
   signal div_start_over : std_logic := '0';
   signal div_busy : std_logic := '0';
+  -- The divider runs on divclock; its outputs are re-registered on cpuclock
+  -- here so that the divclock->cpuclock crossing is a plain register-to-
+  -- register hop instead of reaching into the fastio read mux.
+  signal div_q_cpu : unsigned(63 downto 0) := (others => '0');
+  signal div_busy_cpu : std_logic := '0';
 
   signal floppy_last_gap : unsigned(11 downto 0) := x"000";
   signal floppy_gap : unsigned(11 downto 0) := x"000";
@@ -1593,7 +1600,7 @@ begin
 
   fd0: entity work.fast_divide
     port map (
-      clock => clock,
+      clock => divclock,
       n => div_n,
       d => div_d,
       q => div_q,
@@ -2501,7 +2508,7 @@ begin
             when x"04" => return reg_dmagic_addr(27 downto 20);
             -- @IO:GS $D70F.7 MATH:DIVBUSY Set if hardware divider is busy
             -- @IO:GS $D70F.6 MATH:MULBUSY Set if hardware multiplier is busy
-            when x"0F" => return div_busy & "0000000";
+            when x"0F" => return div_busy_cpu & "0000000";
             when x"10" => return "00" & badline_extra_cycles  & charge_for_branches_taken & vdc_enabled & slow_interrupts & badline_enable;
             -- @IO:GS $D711.7 DMA:AUDEN Enable Audio DMA
             -- @IO:GS $D711.6 DMA:BLKD Audio DMA blocked (read only) DEBUG
@@ -2714,14 +2721,14 @@ begin
 
 
             -- $D760-$D7DF reserved for math unit functions
-            when x"68" => return div_q(7 downto 0);
-            when x"69" => return div_q(15 downto 8);
-            when x"6a" => return div_q(23 downto 16);
-            when x"6b" => return div_q(31 downto 24);
-            when x"6c" => return div_q(39 downto 32);
-            when x"6d" => return div_q(47 downto 40);
-            when x"6e" => return div_q(55 downto 48);
-            when x"6f" => return div_q(63 downto 56);
+            when x"68" => return div_q_cpu(7 downto 0);
+            when x"69" => return div_q_cpu(15 downto 8);
+            when x"6a" => return div_q_cpu(23 downto 16);
+            when x"6b" => return div_q_cpu(31 downto 24);
+            when x"6c" => return div_q_cpu(39 downto 32);
+            when x"6d" => return div_q_cpu(47 downto 40);
+            when x"6e" => return div_q_cpu(55 downto 48);
+            when x"6f" => return div_q_cpu(63 downto 56);
             when x"70" => return reg_mult_a(7 downto 0);
             when x"71" => return reg_mult_a(15 downto 8);
             when x"72" => return reg_mult_a(23 downto 16);
@@ -4322,6 +4329,8 @@ begin
       end if;
 
       div_start_over <= '0';
+      div_q_cpu <= div_q;
+      div_busy_cpu <= div_busy;
 
       -- By default try to service pending background DMA requests.
       -- Only if the shadow RAM bus is idle, do we actually do the request,
