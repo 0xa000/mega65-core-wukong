@@ -6,15 +6,30 @@ use work.debugtools.all;
 use work.cputypes.all;
 
 entity sdram_controller is
-  generic (in_simulation : in boolean := false);
+  generic (in_simulation : in boolean := false;
+           -- Power-on READ-to-capture latency ($C00000A).  The default of
+           -- 3 reproduces the original fixed wait chain (correct for the
+           -- MEGA65 R4+ boards and the zero-delay simulation model);
+           -- boards with different trace delays pass their measured value.
+           read_latency_init : integer range 0 to 15 := 3);
   port (pixelclock : in std_logic;      -- For slow devices bus interface is
         -- actually on pixelclock to reduce latencies
         -- Also pixelclock is the natural clock speed we apply to the HyperRAM.
-        clock162   : in std_logic;      -- Used for fast clock for SDRAM
+        -- Nominal 162MHz SDRAM clock (162.5MHz on MEGA65 R4+ boards,
+        -- 162.0MHz on boards clocked from the 810MHz VCO family)
+        clock162   : in std_logic;
 
         clock162r  : in std_logic;      -- read register clock
 
         identical_clocks : in std_logic;
+
+        -- Fine phase-shift control for the read register clock (clock162r),
+        -- pulsed by writing to $C000008 (bit 0 = direction).  The current
+        -- step count is readable at $C000008/$C000009 and is a RELATIVE
+        -- offset from the statically calibrated capture phase (the MMCM
+        -- bakes in the measured eye centre; 0 = calibrated centre).
+        sdram_ps_en     : out std_logic := '0';
+        sdram_ps_incdec : out std_logic := '0';
 
         -- Option to ignore 100usec initialisation sequence for SDRAM (to
         -- speed up simulation)
@@ -123,9 +138,6 @@ architecture tacoma_narrows of sdram_controller is
                          ACTIVATE_WAIT_1,
                          ACTIVATE_WAIT_2,
                          READ_WAIT,
-                         READ_WAIT_2,
-                         READ_WAIT_3,
-                         READ_WAIT_4,
                          READ_0,
                          READ_1,
                          READ_2,
@@ -168,6 +180,15 @@ architecture tacoma_narrows of sdram_controller is
   signal write_jobs : unsigned(7 downto 0) := to_unsigned(0, 8);
 
   signal nonram_val : unsigned(7 downto 0);
+  signal ps_count   : unsigned(15 downto 0) := to_unsigned(0,16);
+  -- Cycles spent in READ_WAIT between READ command and first capture is
+  -- read_latency_cfg (+1 implicit), minus one when identical_clocks='1';
+  -- a value of 3 reproduces the original fixed 4-cycle wait chain.
+  -- Runtime-tunable via $C00000A for capture alignment bring-up.
+  -- Default 2: centre of the measured eye on Wukong V3 with the inverted
+  -- forwarded clock (2026-09-09 scan, tests/wukong-bringup/).
+  signal read_latency_cfg : unsigned(3 downto 0) := to_unsigned(read_latency_init,4);
+  signal read_wait_count  : integer range 0 to 15 := 0;
 
   signal reactive_cache_line_if_safe  : std_logic := '0';
   signal write_targets_cache_line     : std_logic := '0';
@@ -324,6 +345,7 @@ begin
       sdram_dq_oe_n <= (others => '1');
       sdram_dqml <= '1';
       sdram_dqmh <= '1';
+      sdram_ps_en <= '0';
 
       if refresh_due_countdown /= 0 then
         refresh_due_countdown <= refresh_due_countdown - 1;
@@ -396,6 +418,14 @@ begin
           nonram_val <= write_jobs;
         when x"07" =>
           nonram_val <= resets;
+        -- Current read-capture phase step count
+        when x"08" =>
+          nonram_val <= ps_count(7 downto 0);
+        when x"09" =>
+          nonram_val <= ps_count(15 downto 8);
+        -- Read latency configuration
+        when x"0A" =>
+          nonram_val <= x"0" & read_latency_cfg;
         when others => nonram_val <= x"42";
       end case;
 
@@ -611,13 +641,34 @@ begin
               if latched_addr(26) = '1' then
                 report "NONRAMACCESS: Non-RAM access detected";
                 if write_latched = '1' then
-                  -- Repeat SDRAM initialisation sequence whenver a non-RAM
-                  -- address is written.
-                  -- XXX Used to debug whether SDRAM initialisation is sometimes
-                  -- failing.
-                  sdram_prepped <= '0';
-                  sdram_init_phase <= 0;
-                  sdram_do_init <= '1';
+                  if latched_addr(7 downto 0) = x"08" then
+                    -- Step the read capture clock phase by ~22ps;
+                    -- bit 0 of the written value selects the direction.
+                    -- (MMCM wants 12 PSCLK cycles between steps; writes
+                    -- arrive orders of magnitude further apart than that.)
+                    sdram_ps_en     <= '1';
+                    sdram_ps_incdec <= wdata_latched(0);
+                    if wdata_latched(0) = '1' then
+                      ps_count <= ps_count + 1;
+                    else
+                      ps_count <= ps_count - 1;
+                    end if;
+                    report "BUSY: Clearing after phase-step write";
+                    busy <= '0';
+                  elsif latched_addr(7 downto 0) = x"0A" then
+                    -- Set the READ command to capture latency in cycles
+                    read_latency_cfg <= wdata_latched(3 downto 0);
+                    report "BUSY: Clearing after read-latency write";
+                    busy <= '0';
+                  else
+                    -- Repeat SDRAM initialisation sequence whenever any other
+                    -- non-RAM address is written.
+                    -- XXX Used to debug whether SDRAM initialisation is sometimes
+                    -- failing.
+                    sdram_prepped <= '0';
+                    sdram_init_phase <= 0;
+                    sdram_do_init <= '1';
+                  end if;
                   write_latched <= '0';
                 else
                   -- Read non-RAM address
@@ -669,6 +720,11 @@ begin
                   sdram_a(9 downto 2) <= latched_addr(10 downto 3);
                   sdram_a(1 downto 0) <= "00";
                   sdram_state         <= READ_WAIT;
+                  if identical_clocks = '1' and read_latency_cfg /= 0 then
+                    read_wait_count <= to_integer(read_latency_cfg) - 1;
+                  else
+                    read_wait_count <= to_integer(read_latency_cfg);
+                  end if;
                   sdram_dqml          <= '0'; sdram_dqmh <= '0';
                 end if;
               else
@@ -802,25 +858,29 @@ begin
               sdram_a(9 downto 2) <= latched_addr(10 downto 3);
               sdram_a(1 downto 0) <= "00";
               sdram_state         <= READ_WAIT;
+              if identical_clocks = '1' and read_latency_cfg /= 0 then
+                read_wait_count <= to_integer(read_latency_cfg) - 1;
+              else
+                read_wait_count <= to_integer(read_latency_cfg);
+              end if;
               sdram_dqml          <= '0'; sdram_dqmh <= '0';
             end if;
           when READ_WAIT =>
-            read_jobs  <= read_jobs + 1;
+            -- Wait a configurable number of cycles between the READ
+            -- command and the first capture, so the CAS-latency /
+            -- capture-register alignment can be tuned at runtime via
+            -- $C00000A during board bring-up (hardware showed the fixed
+            -- 4-cycle chain sampling two burst words late on Wukong V3).
             sdram_dqml <= '0'; sdram_dqmh <= '0';
             sdram_emit_command(CMD_NOP);
-          when READ_WAIT_2 =>
-            sdram_dqml <= '0'; sdram_dqmh <= '0';
-            sdram_emit_command(CMD_NOP);
-          when READ_WAIT_3 =>
-            if identical_clocks='1' then
-              sdram_state <= READ_0;
+            -- The default auto-progression (sdram_state'succ) advances to
+            -- READ_0; hold here instead while the wait counter runs down.
+            if read_wait_count /= 0 then
+              sdram_state     <= READ_WAIT;
+              read_wait_count <= read_wait_count - 1;
             end if;
-            sdram_dqml <= '0'; sdram_dqmh <= '0';
-            sdram_emit_command(CMD_NOP);
-          when READ_WAIT_4 =>
-            sdram_dqml <= '0'; sdram_dqmh <= '0';
-            sdram_emit_command(CMD_NOP);
           when READ_0 =>
+            read_jobs  <= read_jobs + 1;
             sdram_dqml <= '0'; sdram_dqmh <= '0';
             sdram_emit_command(CMD_NOP);
             -- Data is latched on opposite phase clock, so it isn't available yet

@@ -94,7 +94,8 @@ begin
 
   sdram_controller0 : entity work.sdram_controller
     generic map (
-        in_simulation => false
+        in_simulation => false,
+        read_latency_init => 3
     )
     port map (
         pixelclock => pixelclock,
