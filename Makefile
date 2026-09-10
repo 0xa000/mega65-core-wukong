@@ -183,8 +183,8 @@ SDCARD_FILES= \
 FLASHER_FILES= \
 	$(UTILDIR)/megaflash/mflash.prg
 
-CURRENT_TARGETS=mega65r6 mega65r4 mega65r3 mega65r2 nexys4ddr-widget
-CHECK_CURRENT_TARGETS=check-mega65r6 check-mega65r4 check-mega65r3 check-mega65r2 check-nexys4ddr-widget
+CURRENT_TARGETS=mega65r6 mega65r4 mega65r3 mega65r2 nexys4ddr-widget wukongv3
+CHECK_CURRENT_TARGETS=check-mega65r6 check-mega65r4 check-mega65r3 check-mega65r2 check-nexys4ddr-widget check-wukongv3
 
 all:	freezer_files $(SDCARD_DIR)/MEGA65.D81
 	$(info ...)
@@ -1164,7 +1164,8 @@ $(SRCDIR)/open-roms/assets/8x8font.png:
 # for definition.
 #
 # The difference in shadowram is whether the board has ATTIC RAM or not
-# - no-attic for wukong and nexys
+# - no-attic for nexys and wukong V1; wukong V2 (DDR3, out of tree) and
+#   V3 (SDRAM) have attic RAM (V3 still selects no-attic megaflash for now)
 # - attic for mega65 PCBs
 #
 $(VHDLSRCDIR)/shadowram-no-attic.vhdl:	$(TOOLDIR)/mempacker/mempacker_new $(SDCARD_DIR)/BANNER.M65 $(ASSETS)/alphatest.bin Makefile $(SDCARD_DIR)/FREEZER.M65  $(SRCDIR)/open-roms/bin/mega65.rom $(SDCARD_DIR)/ONBOARD.M65 $(MFUTILDIR)/megaflash-no-attic.prg $(MFUTILDIR)/mf_screens.adr $(MFUTILDIR)/mf_screens.bin
