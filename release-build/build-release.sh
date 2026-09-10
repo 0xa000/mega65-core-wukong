@@ -12,7 +12,7 @@ usage () {
     echo "  -repack   don't copy new stuff, redo cor and mcs, make new 7z"
     echo "  -tag TAG  TAG defaults to the 6 first characters of the branch, use"
     echo "            this for setting something like 'release-0.95'"
-    echo "  MODEL     one of mega65r[23456], nexys4ddr-widget, mega65r5_6, wukong"
+    echo "  MODEL     one of mega65r[23456], nexys4ddr-widget, mega65r5_6, wukongv2, wukongv3"
     echo "  VERSION   version string to put before the hash into the core version"
     echo "            maximum 31 chars. The string HASH will be replaced by the"
     echo "            hash of the build."
@@ -122,8 +122,10 @@ elif [[ ${MODEL} = "mega65r2" ]]; then
     RM_TARGET="MEGA65R2 boards -- Limited Testkit (Artix A7 100T FPGA)"
 elif [[ ${MODEL} = "nexys4ddr-widget" ]]; then
     RM_TARGET="Nexys4DDR boards -- Nexys4DDR, NexysA7 (Artix A7 100T FPGA)"
-elif [[ ${MODEL} = "wukong" ]]; then
-    RM_TARGET="Wukong board -- TEST for WukongA100T-v2 (Artix A7 100T FPGA 7a100tfgg676)"
+elif [[ ${MODEL} = "wukongv2" ]]; then
+    RM_TARGET="QMTECH Wukong V2 board (Artix A7 100T FPGA 7a100tfgg676, DDR3 attic RAM)"
+elif [[ ${MODEL} = "wukongv3" ]]; then
+    RM_TARGET="QMTECH Wukong V3 board (Artix A7 100T FPGA 7a100tfgg676, SDRAM attic RAM)"
 else
     usage "unknown model ${MODEL}"
 fi
