@@ -6,15 +6,30 @@ use work.debugtools.all;
 use work.cputypes.all;
 
 entity sdram_controller is
-  generic (in_simulation : in boolean := false);
+  generic (in_simulation : in boolean := false;
+           -- Power-on READ-to-capture latency ($C00000A).  The default of
+           -- 3 reproduces the original fixed wait chain (correct for the
+           -- MEGA65 R4+ boards and the zero-delay simulation model);
+           -- boards with different trace delays pass their measured value.
+           read_latency_init : integer range 0 to 15 := 3);
   port (pixelclock : in std_logic;      -- For slow devices bus interface is
         -- actually on pixelclock to reduce latencies
         -- Also pixelclock is the natural clock speed we apply to the HyperRAM.
-        clock162   : in std_logic;      -- Used for fast clock for SDRAM
+        -- Nominal 162MHz SDRAM clock (162.5MHz on MEGA65 R4+ boards,
+        -- 162.0MHz on boards clocked from the 810MHz VCO family)
+        clock162   : in std_logic;
 
         clock162r  : in std_logic;      -- read register clock
 
         identical_clocks : in std_logic;
+
+        -- Fine phase-shift control for the read register clock (clock162r),
+        -- pulsed by writing to $C000008 (bit 0 = direction).  The current
+        -- step count is readable at $C000008/$C000009 and is a RELATIVE
+        -- offset from the statically calibrated capture phase (the MMCM
+        -- bakes in the measured eye centre; 0 = calibrated centre).
+        sdram_ps_en     : out std_logic := '0';
+        sdram_ps_incdec : out std_logic := '0';
 
         -- Option to ignore 100usec initialisation sequence for SDRAM (to
         -- speed up simulation)
@@ -82,12 +97,14 @@ architecture tacoma_narrows of sdram_controller is
 
   signal last_data_ready_toggle : std_logic := '0';
 
-  -- XXX Don't configure SDRAM by default, while I debug why it sometimes
-  -- powers up in wrong state.
-  signal sdram_prepped         : std_logic             := '1';
+  signal sdram_prepped         : std_logic             := '0';
   -- The SDRAM requires a 100us setup time
   signal sdram_100us_countdown : integer               := 16_200;
-  signal sdram_do_init         : std_logic             := '1';
+  -- Held off until the 100usec delay has expired (or immediately when
+  -- enforce_100us_delay is false, for simulation). Writing any non-RAM
+  -- address ($C00xxxx) re-runs the initialisation sequence; the number of
+  -- runs is readable at $C000007.
+  signal sdram_do_init         : std_logic             := '0';
   signal sdram_init_phase      : integer range 0 to 63 := 0;
 
   type sdram_cmd_t is (CMD_NOP, CMD_SET_MODE_REG,
@@ -121,16 +138,16 @@ architecture tacoma_narrows of sdram_controller is
                          ACTIVATE_WAIT_1,
                          ACTIVATE_WAIT_2,
                          READ_WAIT,
-                         READ_WAIT_2,
-                         READ_WAIT_3,
-                         READ_WAIT_4,
                          READ_0,
                          READ_1,
                          READ_2,
                          READ_3,
                          READ_4,
-                         WRITE_1,
-                         WRITE_2,
+                         FLUSH_0,
+                         FLUSH_1,
+                         FLUSH_2,
+                         FLUSH_3,
+                         FLUSH_RECOVER,
                          CLOSE_FOR_REFRESH,
                          CLOSE_FOR_REFRESH_2,
                          CLOSE_FOR_REFRESH_3,
@@ -163,6 +180,15 @@ architecture tacoma_narrows of sdram_controller is
   signal write_jobs : unsigned(7 downto 0) := to_unsigned(0, 8);
 
   signal nonram_val : unsigned(7 downto 0);
+  signal ps_count   : unsigned(15 downto 0) := to_unsigned(0,16);
+  -- Cycles spent in READ_WAIT between READ command and first capture is
+  -- read_latency_cfg (+1 implicit), minus one when identical_clocks='1';
+  -- a value of 3 reproduces the original fixed 4-cycle wait chain.
+  -- Runtime-tunable via $C00000A for capture alignment bring-up.
+  -- Default 2: centre of the measured eye on Wukong V3 with the inverted
+  -- forwarded clock (2026-09-09 scan, tests/wukong-bringup/).
+  signal read_latency_cfg : unsigned(3 downto 0) := to_unsigned(read_latency_init,4);
+  signal read_wait_count  : integer range 0 to 15 := 0;
 
   signal reactive_cache_line_if_safe  : std_logic := '0';
   signal write_targets_cache_line     : std_logic := '0';
@@ -192,6 +218,35 @@ architecture tacoma_narrows of sdram_controller is
   signal active_row_addr      : unsigned(25 downto 11) := (others => '0');
 
   signal resets : unsigned(7 downto 0) := x"00";
+
+  -- Last-read-line cache: rdata_line keeps the most recent 8-byte burst
+  -- anyway, so remembering which line it holds lets us serve repeated
+  -- reads of that line from IDLE without touching the SDRAM array.
+  -- Coherence: any latched write to the cached line invalidates it.
+  signal read_line_addr  : unsigned(26 downto 3) := (others => '0');
+  signal read_line_valid : std_logic := '0';
+
+  -- Write-combining cache (ported from the openxc7 sdram_controller_wukong):
+  -- byte writes merge into a single 8-byte line and complete immediately;
+  -- the line is flushed to the array (up to 4 consecutive single-word
+  -- WRITE commands, clean words skipped, per-byte DQM masking) only when
+  -- a write misses a dirty line or a read needs the line's true content.
+  -- A set select bit marks a dirty byte. While a flush is in flight the
+  -- triggering request stays latched and is re-dispatched from IDLE
+  -- afterwards. write_jobs counts flushes (readable at $C000006).
+  signal write_cache_addr  : unsigned(26 downto 3) := (others => '0');
+  signal write_cache_data  : unsigned(63 downto 0) := (others => '0');
+  signal write_cache_sel   : std_logic_vector(7 downto 0) := (others => '0');
+  signal write_cache_dirty : std_logic := '0';
+  signal flush_active      : std_logic := '0';
+
+  -- The line-address comparisons against the two caches are precomputed
+  -- when a request is latched, so the IDLE dispatch logic tests a single
+  -- registered bit instead of a 24-bit comparator (which showed up as
+  -- the critical path in the 162MHz domain). Both cache line addresses
+  -- are stable between a request's latch and its dispatch.
+  signal latched_matches_read_line  : std_logic := '0';
+  signal latched_matches_write_line : std_logic := '0';
 
   signal sdram_dq_out : unsigned(15 downto 0);
   signal sdram_dq_oe_n : std_logic_vector(15 downto 0);
@@ -260,12 +315,37 @@ begin
       end case;
     end procedure;
 
+    -- Start writing the dirty write-cache line back to the array,
+    -- opening or switching to its row first when necessary. The
+    -- triggering request stays latched and is re-dispatched from
+    -- IDLE once the flush has completed.
+    procedure dispatch_flush is
+    begin
+      report "SDRAMFLUSH: Flushing write cache line $" & to_hexstring(write_cache_addr & "000");
+      flush_active <= '1';
+      if active_row = '0' then
+        sdram_emit_command(CMD_ACTIVATE_ROW);
+        sdram_ba    <= write_cache_addr(25 downto 24);
+        sdram_a     <= write_cache_addr(23 downto 11);
+        sdram_state <= ACTIVATE_WAIT;
+      elsif write_cache_addr(25 downto 11) /= active_row_addr(25 downto 11) then
+        sdram_emit_command(CMD_PRECHARGE);
+        sdram_ba    <= write_cache_addr(25 downto 24);
+        sdram_a     <= write_cache_addr(23 downto 11);
+        sdram_state <= CLOSE_AND_SWITCH_ROW;
+      else
+        sdram_emit_command(CMD_NOP);
+        sdram_state <= FLUSH_0;
+      end if;
+    end procedure;
+
   begin
     if rising_edge(clock162) then
 
       sdram_dq_oe_n <= (others => '1');
       sdram_dqml <= '1';
       sdram_dqmh <= '1';
+      sdram_ps_en <= '0';
 
       if refresh_due_countdown /= 0 then
         refresh_due_countdown <= refresh_due_countdown - 1;
@@ -338,6 +418,14 @@ begin
           nonram_val <= write_jobs;
         when x"07" =>
           nonram_val <= resets;
+        -- Current read-capture phase step count
+        when x"08" =>
+          nonram_val <= ps_count(7 downto 0);
+        when x"09" =>
+          nonram_val <= ps_count(15 downto 8);
+        -- Read latency configuration
+        when x"0A" =>
+          nonram_val <= x"0" & read_latency_cfg;
         when others => nonram_val <= x"42";
       end case;
 
@@ -350,6 +438,16 @@ begin
         read_latched <= '1';
         latched_addr <= address;
         silent_read  <= '0';
+        if address(26 downto 3) = read_line_addr then
+          latched_matches_read_line <= '1';
+        else
+          latched_matches_read_line <= '0';
+        end if;
+        if address(26 downto 3) = write_cache_addr then
+          latched_matches_write_line <= '1';
+        else
+          latched_matches_write_line <= '0';
+        end if;
       end if;
       if read_request = '0' and write_request = '1' and write_latched = '0' and read_latched = '0' then
         report "Latching write request";
@@ -358,10 +456,22 @@ begin
         write_latched <= '1';
         latched_addr  <= address;
         wdata_latched <= wdata;
+        if address(26 downto 3) = read_line_addr then
+          read_line_valid <= '0';
+        end if;
+        if address(26 downto 3) = write_cache_addr then
+          latched_matches_write_line <= '1';
+        else
+          latched_matches_write_line <= '0';
+        end if;
         if rdata_16en = '1' then
           wdata_hi_latched <= wdata_hi;
+          -- The latched_wen_* signals carry DQM polarity ('1' = mask the
+          -- byte, see the non-16-bit path below). Per the port convention
+          -- wen_lo is already inverted (active low) but wen_hi is active
+          -- high, so it must be inverted here.
           latched_wen_lo   <= wen_lo;
-          latched_wen_hi   <= wen_hi;
+          latched_wen_hi   <= not wen_hi;
         else
           wdata_hi_latched <= wdata;
           latched_wen_lo   <= address(0);
@@ -415,6 +525,16 @@ begin
         latched_addr(2 downto 0)            <= "000";
         silent_read                         <= '1';
         prev_current_cache_line_prev_toggle <= prev_toggle_drive;
+        if cache_line_prev_address = read_line_addr then
+          latched_matches_read_line <= '1';
+        else
+          latched_matches_read_line <= '0';
+        end if;
+        if cache_line_prev_address = write_cache_addr then
+          latched_matches_write_line <= '1';
+        else
+          latched_matches_write_line <= '0';
+        end if;
       end if;
 
       if read_request = '0' and write_request = '0' and write_latched = '0' and read_latched = '0' and
@@ -428,6 +548,16 @@ begin
         latched_addr(2 downto 0)            <= "000";
         silent_read                         <= '1';
         prev_current_cache_line_next_toggle <= next_toggle_drive;
+        if cache_line_next_address = read_line_addr then
+          latched_matches_read_line <= '1';
+        else
+          latched_matches_read_line <= '0';
+        end if;
+        if cache_line_next_address = write_cache_addr then
+          latched_matches_write_line <= '1';
+        else
+          latched_matches_write_line <= '0';
+        end if;
       end if;
 
       -- Manage the 100usec SDRAM initialisation delay, if enabled
@@ -511,29 +641,58 @@ begin
               if latched_addr(26) = '1' then
                 report "NONRAMACCESS: Non-RAM access detected";
                 if write_latched = '1' then
-                  -- Repeat SDRAM initialisation sequence whenver a non-RAM
-                  -- address is written.
-                  -- XXX Used to debug whether SDRAM initialisation is sometimes
-                  -- failing.
-                  sdram_prepped <= '0';
-                  sdram_init_phase <= 0;
-                  sdram_do_init <= '1';
+                  if latched_addr(7 downto 0) = x"08" then
+                    -- Step the read capture clock phase by ~22ps;
+                    -- bit 0 of the written value selects the direction.
+                    -- (MMCM wants 12 PSCLK cycles between steps; writes
+                    -- arrive orders of magnitude further apart than that.)
+                    sdram_ps_en     <= '1';
+                    sdram_ps_incdec <= wdata_latched(0);
+                    if wdata_latched(0) = '1' then
+                      ps_count <= ps_count + 1;
+                    else
+                      ps_count <= ps_count - 1;
+                    end if;
+                    report "BUSY: Clearing after phase-step write";
+                    busy <= '0';
+                  elsif latched_addr(7 downto 0) = x"0A" then
+                    -- Set the READ command to capture latency in cycles
+                    read_latency_cfg <= wdata_latched(3 downto 0);
+                    report "BUSY: Clearing after read-latency write";
+                    busy <= '0';
+                  else
+                    -- Repeat SDRAM initialisation sequence whenever any other
+                    -- non-RAM address is written.
+                    -- XXX Used to debug whether SDRAM initialisation is sometimes
+                    -- failing.
+                    sdram_prepped <= '0';
+                    sdram_init_phase <= 0;
+                    sdram_do_init <= '1';
+                  end if;
                   write_latched <= '0';
                 else
                   -- Read non-RAM address
                   sdram_state <= NON_RAM_READ;
                   sdram_emit_command(CMD_NOP);
                 end if;
-              else
-                -- Activate the row
-                if read_latched = '1' then
-                  report "SDRAMREAD: Starting read from $" & to_hexstring(latched_addr);
-                end if;
-                if write_latched = '1' then
-                  report "SDRAMWRITE: Starting write: $" & to_hexstring(latched_addr) & " <= $" & to_hexstring(wdata_latched);
-                end if;
-                if active_row = '0' then
-                  report "ACTIVATEROW: No row open yet, so opening before read or write for row $" & to_hexstring(latched_addr)
+              elsif read_latched = '1' then
+                report "SDRAMREAD: Starting read from $" & to_hexstring(latched_addr);
+                if read_line_valid = '1' and latched_matches_read_line = '1' then
+                  -- Read-line cache hit: rdata_line already holds this line,
+                  -- so publish it without an SDRAM transaction.
+                  report "SDRAMREAD: Read-line cache hit for $" & to_hexstring(latched_addr);
+                  sdram_emit_command(CMD_NOP);
+                  read_complete_strobe <= '1';
+                  read_latched         <= '0';
+                  report "BUSY: Clearing after read-line cache hit";
+                  busy                 <= '0';
+                elsif write_cache_dirty = '1'
+                  and latched_matches_write_line = '1' then
+                  -- The line's newest bytes are still in the write cache:
+                  -- flush it first, then re-dispatch this read from IDLE.
+                  dispatch_flush;
+                elsif active_row = '0' then
+                  report "ACTIVATEROW: No row open yet, so opening before read for row $" & to_hexstring(latched_addr)
                     & " = %" & to_string(std_logic_vector(latched_addr));
                   -- If no active row, then activate one
                   sdram_emit_command(CMD_ACTIVATE_ROW);
@@ -541,7 +700,7 @@ begin
                   sdram_a     <= latched_addr(23 downto 11);
                   sdram_state <= ACTIVATE_WAIT;
                 elsif latched_addr(25 downto 11) /= active_row_addr(25 downto 11) then
-                  report "ACTIVATEROW: Closing old row before opening new one required for read or write";
+                  report "ACTIVATEROW: Closing old row before opening new one required for read";
                   -- Different row activated
                   -- Precharge row, then activate the correct row
                   sdram_emit_command(CMD_PRECHARGE);
@@ -550,30 +709,29 @@ begin
                   sdram_state <= CLOSE_AND_SWITCH_ROW;
                 else
                   -- Correct row already activated
-                  report "ACTIVEROW: Correct row is already active";
-                  if read_latched = '1' then
-                    report "SDRAM: Issuing READ command after ROW_ACTIVATE";
-                    sdram_emit_command(CMD_READ);
-                    -- Select address of start of 8-byte block
-                    -- Each word is 2 bytes, which takes one bit
-                    -- off, and then the bottom two bits must be zero.
-                    sdram_a(12)         <= '0';
-                    sdram_a(11)         <= '0';
-                    sdram_a(10)         <= '0';  -- Disable auto precharge
-                    sdram_a(9 downto 2) <= latched_addr(10 downto 3);
-                    sdram_a(1 downto 0) <= "00";
-                    sdram_state         <= READ_WAIT;
-                    sdram_dqml          <= '0'; sdram_dqmh <= '0';
+                  report "SDRAM: Issuing READ command against already-active row";
+                  sdram_emit_command(CMD_READ);
+                  -- Select address of start of 8-byte block
+                  -- Each word is 2 bytes, which takes one bit
+                  -- off, and then the bottom two bits must be zero.
+                  sdram_a(12)         <= '0';
+                  sdram_a(11)         <= '0';
+                  sdram_a(10)         <= '0';  -- Disable auto precharge
+                  sdram_a(9 downto 2) <= latched_addr(10 downto 3);
+                  sdram_a(1 downto 0) <= "00";
+                  sdram_state         <= READ_WAIT;
+                  if identical_clocks = '1' and read_latency_cfg /= 0 then
+                    read_wait_count <= to_integer(read_latency_cfg) - 1;
+                  else
+                    read_wait_count <= to_integer(read_latency_cfg);
                   end if;
-                  if write_latched = '1' then
-                    report "SDRAM: Issuing WRITE command after ROW_ACTIVATE";
-                    sdram_state <= WRITE_1;
-                    sdram_dq_out(7 downto 0)  <= wdata_latched;
-                    sdram_dq_out(15 downto 8) <= wdata_hi_latched;
-                    sdram_dq_oe_n <= (others => '0');
-                  end if;
-
+                  sdram_dqml          <= '0'; sdram_dqmh <= '0';
                 end if;
+              else
+                -- Write request: writes complete by merging into the
+                -- write-combining cache; only a miss on a dirty line costs
+                -- an SDRAM transaction (the flush of the old line).
+                report "SDRAMWRITE: Starting write: $" & to_hexstring(latched_addr) & " <= $" & to_hexstring(wdata_latched);
 
                 -- XXX For now we invalidate the cache line on _any_ write
                 -- For the common case of DMA copy to or from slow RAM, this
@@ -581,12 +739,68 @@ begin
                 -- So to remedy that, we set a signal to check if the cache
                 -- line can be re-instated. This prevents use of the cache while
                 -- we are figuring out if the line is still valid.
-                if write_latched = '1' then
-                  current_cache_line_valid     <= '0';
-                  current_cache_line_valid_int <= '0';
-                  if current_cache_line_valid_int = '1' then
-                    reactive_cache_line_if_safe <= '1';
+                current_cache_line_valid     <= '0';
+                current_cache_line_valid_int <= '0';
+                if current_cache_line_valid_int = '1' then
+                  reactive_cache_line_if_safe <= '1';
+                end if;
+
+                if write_cache_dirty = '1'
+                  and latched_matches_write_line = '0' then
+                  -- Miss on a dirty line: flush it, then re-dispatch this
+                  -- write from IDLE (the cache is clean by then).
+                  dispatch_flush;
+                else
+                  -- Merge into the cache (adopting the line first if it
+                  -- differs from the last flushed one). The latched_wen_*
+                  -- signals carry DQM polarity: '0' means write the byte.
+                  sdram_emit_command(CMD_NOP);
+                  if latched_matches_write_line = '0' then
+                    write_cache_addr <= latched_addr(26 downto 3);
+                    write_cache_sel  <= (others => '0');
                   end if;
+                  case latched_addr(2 downto 1) is
+                    when "00" =>
+                      if latched_wen_lo = '0' then
+                        write_cache_data(7 downto 0) <= wdata_latched;
+                        write_cache_sel(0) <= '1';
+                      end if;
+                      if latched_wen_hi = '0' then
+                        write_cache_data(15 downto 8) <= wdata_hi_latched;
+                        write_cache_sel(1) <= '1';
+                      end if;
+                    when "01" =>
+                      if latched_wen_lo = '0' then
+                        write_cache_data(23 downto 16) <= wdata_latched;
+                        write_cache_sel(2) <= '1';
+                      end if;
+                      if latched_wen_hi = '0' then
+                        write_cache_data(31 downto 24) <= wdata_hi_latched;
+                        write_cache_sel(3) <= '1';
+                      end if;
+                    when "10" =>
+                      if latched_wen_lo = '0' then
+                        write_cache_data(39 downto 32) <= wdata_latched;
+                        write_cache_sel(4) <= '1';
+                      end if;
+                      if latched_wen_hi = '0' then
+                        write_cache_data(47 downto 40) <= wdata_hi_latched;
+                        write_cache_sel(5) <= '1';
+                      end if;
+                    when others =>
+                      if latched_wen_lo = '0' then
+                        write_cache_data(55 downto 48) <= wdata_latched;
+                        write_cache_sel(6) <= '1';
+                      end if;
+                      if latched_wen_hi = '0' then
+                        write_cache_data(63 downto 56) <= wdata_hi_latched;
+                        write_cache_sel(7) <= '1';
+                      end if;
+                  end case;
+                  write_cache_dirty <= '1';
+                  write_latched     <= '0';
+                  report "BUSY: Clearing after write-cache merge";
+                  busy              <= '0';
                 end if;
               end if;
             else
@@ -610,28 +824,29 @@ begin
           when CLOSE_AND_SWITCH_ROW_2 => sdram_emit_command(CMD_NOP);
           when CLOSE_AND_SWITCH_ROW_3 => sdram_emit_command(CMD_NOP);
           when CLOSE_AND_SWITCH_ROW_4 =>
-            -- Now open the new row
+            -- Now open the new row (of the flush line when flushing)
             sdram_emit_command(CMD_ACTIVATE_ROW);
-            sdram_ba <= latched_addr(25 downto 24);
-            sdram_a  <= latched_addr(23 downto 11);
+            if flush_active = '1' then
+              sdram_ba <= write_cache_addr(25 downto 24);
+              sdram_a  <= write_cache_addr(23 downto 11);
+            else
+              sdram_ba <= latched_addr(25 downto 24);
+              sdram_a  <= latched_addr(23 downto 11);
+            end if;
           when ACTIVATE_WAIT =>
             sdram_emit_command(CMD_NOP);
           when ACTIVATE_WAIT_1 =>
             sdram_emit_command(CMD_NOP);
-            if write_latched = '1' then
-              -- Setup write data early, to handle marginal timing
-              -- more safely (saves us needing separate read latch clock)
-              sdram_dq_out(7 downto 0)  <= wdata_latched;
-              sdram_dq_out(15 downto 8) <= wdata_hi_latched;
-              sdram_dq_oe_n             <= (others => '0');
-              sdram_dqmh            <= latched_wen_hi;
-              sdram_dqml            <= latched_wen_lo;
-            end if;
           when ACTIVATE_WAIT_2 =>
             sdram_emit_command(CMD_NOP);
-            active_row                    <= '1';
-            active_row_addr(25 downto 11) <= latched_addr(25 downto 11);
-            if read_latched = '1' then
+            active_row <= '1';
+            if flush_active = '1' then
+              -- This activate was for the write-cache flush, not for the
+              -- (possibly still latched) triggering request.
+              active_row_addr(25 downto 11) <= write_cache_addr(25 downto 11);
+              sdram_state <= FLUSH_0;
+            elsif read_latched = '1' then
+              active_row_addr(25 downto 11) <= latched_addr(25 downto 11);
               report "SDRAM: Issuing READ command after ROW_ACTIVATE";
               sdram_emit_command(CMD_READ);
               -- Select address of start of 8-byte block
@@ -643,32 +858,29 @@ begin
               sdram_a(9 downto 2) <= latched_addr(10 downto 3);
               sdram_a(1 downto 0) <= "00";
               sdram_state         <= READ_WAIT;
+              if identical_clocks = '1' and read_latency_cfg /= 0 then
+                read_wait_count <= to_integer(read_latency_cfg) - 1;
+              else
+                read_wait_count <= to_integer(read_latency_cfg);
+              end if;
               sdram_dqml          <= '0'; sdram_dqmh <= '0';
             end if;
-            if write_latched = '1' then
-              report "SDRAM: Issuing WRITE command after ROW_ACTIVATE";
-              sdram_state <= WRITE_1;
-            end if;
-            sdram_dq_out(7 downto 0)  <= wdata_latched;
-            sdram_dq_out(15 downto 8) <= wdata_hi_latched;
-            sdram_dq_oe_n             <= (others => '0');
           when READ_WAIT =>
-            read_jobs  <= read_jobs + 1;
+            -- Wait a configurable number of cycles between the READ
+            -- command and the first capture, so the CAS-latency /
+            -- capture-register alignment can be tuned at runtime via
+            -- $C00000A during board bring-up (hardware showed the fixed
+            -- 4-cycle chain sampling two burst words late on Wukong V3).
             sdram_dqml <= '0'; sdram_dqmh <= '0';
             sdram_emit_command(CMD_NOP);
-          when READ_WAIT_2 =>
-            sdram_dqml <= '0'; sdram_dqmh <= '0';
-            sdram_emit_command(CMD_NOP);
-          when READ_WAIT_3 =>
-            if identical_clocks='1' then
-              sdram_state <= READ_0;
+            -- The default auto-progression (sdram_state'succ) advances to
+            -- READ_0; hold here instead while the wait counter runs down.
+            if read_wait_count /= 0 then
+              sdram_state     <= READ_WAIT;
+              read_wait_count <= read_wait_count - 1;
             end if;
-            sdram_dqml <= '0'; sdram_dqmh <= '0';
-            sdram_emit_command(CMD_NOP);
-          when READ_WAIT_4 =>
-            sdram_dqml <= '0'; sdram_dqmh <= '0';
-            sdram_emit_command(CMD_NOP);
           when READ_0 =>
+            read_jobs  <= read_jobs + 1;
             sdram_dqml <= '0'; sdram_dqmh <= '0';
             sdram_emit_command(CMD_NOP);
             -- Data is latched on opposite phase clock, so it isn't available yet
@@ -688,36 +900,83 @@ begin
           when READ_4 =>
             report "READ4: sdram_dq_latched = $" & to_hexstring(sdram_dq_latched);
             rdata_line(63 downto 48) <= sdram_dq_latched;
+            read_line_addr           <= latched_addr(26 downto 3);
+            read_line_valid          <= '1';
             read_complete_strobe     <= '1';
             read_latched             <= '0';
             report "BUSY: Clearing after read";
             busy                     <= '0';
             sdram_state              <= IDLE;
-          when WRITE_1 =>
-            sdram_emit_command(CMD_WRITE);
-            sdram_a(12)         <= '0';
-            sdram_a(11)         <= '0';
-            sdram_a(10)         <= '0';  -- Disable auto precharge
-            sdram_a(9 downto 0) <= latched_addr(10 downto 1);
-
-            sdram_dq_out(7 downto 0)  <= wdata_latched;
-            sdram_dq_out(15 downto 8) <= wdata_hi_latched;
-            sdram_dq_oe_n             <= (others => '0');
-
-            -- DQM lines are high to ignore a byte, and low to accept one
-            sdram_dqmh <= latched_wen_hi;
-            sdram_dqml <= latched_wen_lo;
-
-            -- Immediately complete write request if the correct row is
-            -- already open
-            report "BUSY: Clearing after non-ram read";
-            busy          <= '0';
-            write_latched <= '0';
-          when WRITE_2 =>
-            sdram_dq_out(7 downto 0)  <= wdata_latched;
-            sdram_dq_out(15 downto 8) <= wdata_hi_latched;
-            sdram_dq_oe_n             <= (others => '0');
-            sdram_state           <= IDLE;
+          -- Write the dirty words of the write-cache line back with up to
+          -- four consecutive single-word WRITE commands (clean words are
+          -- skipped with a NOP). DQM lines are high to ignore a byte, and
+          -- low to accept one; for writes DQM masks the same-cycle word.
+          when FLUSH_0 =>
+            if write_cache_sel(1 downto 0) /= "00" then
+              sdram_emit_command(CMD_WRITE);
+              sdram_a(12 downto 10) <= "000";  -- Disable auto precharge
+              sdram_a(9 downto 2)   <= write_cache_addr(10 downto 3);
+              sdram_a(1 downto 0)   <= "00";
+              sdram_dq_out          <= write_cache_data(15 downto 0);
+              sdram_dq_oe_n         <= (others => '0');
+              sdram_dqml            <= not write_cache_sel(0);
+              sdram_dqmh            <= not write_cache_sel(1);
+            else
+              sdram_emit_command(CMD_NOP);
+            end if;
+          when FLUSH_1 =>
+            if write_cache_sel(3 downto 2) /= "00" then
+              sdram_emit_command(CMD_WRITE);
+              sdram_a(12 downto 10) <= "000";
+              sdram_a(9 downto 2)   <= write_cache_addr(10 downto 3);
+              sdram_a(1 downto 0)   <= "01";
+              sdram_dq_out          <= write_cache_data(31 downto 16);
+              sdram_dq_oe_n         <= (others => '0');
+              sdram_dqml            <= not write_cache_sel(2);
+              sdram_dqmh            <= not write_cache_sel(3);
+            else
+              sdram_emit_command(CMD_NOP);
+            end if;
+          when FLUSH_2 =>
+            if write_cache_sel(5 downto 4) /= "00" then
+              sdram_emit_command(CMD_WRITE);
+              sdram_a(12 downto 10) <= "000";
+              sdram_a(9 downto 2)   <= write_cache_addr(10 downto 3);
+              sdram_a(1 downto 0)   <= "10";
+              sdram_dq_out          <= write_cache_data(47 downto 32);
+              sdram_dq_oe_n         <= (others => '0');
+              sdram_dqml            <= not write_cache_sel(4);
+              sdram_dqmh            <= not write_cache_sel(5);
+            else
+              sdram_emit_command(CMD_NOP);
+            end if;
+          when FLUSH_3 =>
+            if write_cache_sel(7 downto 6) /= "00" then
+              sdram_emit_command(CMD_WRITE);
+              sdram_a(12 downto 10) <= "000";
+              sdram_a(9 downto 2)   <= write_cache_addr(10 downto 3);
+              sdram_a(1 downto 0)   <= "11";
+              sdram_dq_out          <= write_cache_data(63 downto 48);
+              sdram_dq_oe_n         <= (others => '0');
+              sdram_dqml            <= not write_cache_sel(6);
+              sdram_dqmh            <= not write_cache_sel(7);
+            else
+              sdram_emit_command(CMD_NOP);
+            end if;
+          when FLUSH_RECOVER =>
+            -- One write-recovery (tWR) cycle before IDLE can issue a
+            -- PRECHARGE. The triggering request is still latched and gets
+            -- re-dispatched from IDLE; keep busy asserted for it.
+            sdram_emit_command(CMD_NOP);
+            flush_active      <= '0';
+            write_cache_dirty <= '0';
+            write_cache_sel   <= (others => '0');
+            write_jobs        <= write_jobs + 1;
+            if read_latched = '0' and write_latched = '0' then
+              report "BUSY: Clearing after flush";
+              busy <= '0';
+            end if;
+            sdram_state <= IDLE;
           when CLOSE_FOR_REFRESH   => sdram_emit_command(CMD_NOP);
           when CLOSE_FOR_REFRESH_2 => sdram_emit_command(CMD_NOP);
           when CLOSE_FOR_REFRESH_3 => sdram_emit_command(CMD_NOP);

@@ -12,7 +12,7 @@ package cputypes is
     megaphoner1, megaphoner4,
     nexys4, nexys4ddr, nexys4ddr_widget,
     qmtecha100t, qmtecha200t, qmtechk325t,
-    wukong
+    wukongv1, wukongv2, wukongv3
     );
   
   type sample_vector_t is array(0 to 15) of signed(15 downto 0);

@@ -94,11 +94,18 @@ begin
 
   sdram_controller0 : entity work.sdram_controller
     generic map (
-        in_simulation => false
+        in_simulation => false,
+        read_latency_init => 3
     )
     port map (
         pixelclock => pixelclock,
         clock162 => clock162,
+        -- In this zero-delay simulation the same-edge latch on clock162r
+        -- captures the previous cycle's DQ word, which lines up with the
+        -- full READ_WAIT_4 path (identical_clocks='0'). On hardware
+        -- clock162r is a -207 degree phase-shifted copy of clock162.
+        clock162r => clock162,
+        identical_clocks => '0',
 
         enforce_100us_delay => enforce_100usec_init,
 
@@ -178,11 +185,13 @@ begin
       slow_address <= to_unsigned(addr,27);
       slow_wdata <= val;
       slow_wdata_hi <= val;
-      slow_wen_lo <= '0'; slow_wen_hi <= '0';
+      -- Port convention: wen_lo is active low, wen_hi is active high.
+      -- Default to writing neither byte, then enable the addressed one.
+      slow_wen_lo <= '1'; slow_wen_hi <= '0';
       if to_integer(to_unsigned(addr,1)) = 1 then
         slow_wen_hi <= '1';
       else
-        slow_wen_lo <= '1';
+        slow_wen_lo <= '0';
       end if;
       clock_tick;
       for i in 1 to 100 loop
@@ -401,6 +410,83 @@ begin
         cache_line_check(x"8000000",x"0001020304050607");
         sdram_read(8,x"8988");
         cache_line_check(x"8000008",x"88898a8b8c8d8e8f");
+
+      elsif run("Read-line cache serves repeated reads without SDRAM access") then
+        wait_for_sdram_ready;
+
+        sdram_write(16,x"a0");
+        sdram_write(17,x"a1");
+        sdram_write(18,x"a2");
+        sdram_write(19,x"a3");
+        sdram_write(20,x"a4");
+        sdram_write(21,x"a5");
+        sdram_write(22,x"a6");
+        sdram_write(23,x"a7");
+
+        -- First read fetches the line from the SDRAM array
+        sdram_read(16,x"a1a0");
+        -- read_jobs counts array reads: exactly one so far
+        sdram_read(64*1024*1024+5,x"0101");
+        -- Same-line reads must be served from the read-line cache
+        sdram_read(18,x"a3a2");
+        sdram_read(20,x"a5a4");
+        sdram_read(22,x"a7a6");
+        -- Still exactly one array read: the hits bypassed the SDRAM
+        sdram_read(64*1024*1024+5,x"0101");
+
+      elsif run("Read-line cache invalidated by write to cached line") then
+        wait_for_sdram_ready;
+
+        sdram_write(0,x"12");
+        sdram_write(1,x"34");
+        sdram_write(2,x"56");
+        sdram_write(3,x"78");
+        sdram_write(4,x"9a");
+        sdram_write(5,x"bc");
+        sdram_write(6,x"de");
+        sdram_write(7,x"f0");
+
+        sdram_read(0,x"3412");   -- array read #1, populates the cache
+        sdram_read(4,x"bc9a");   -- cache hit
+        sdram_write(4,x"55");    -- write to the cached line: invalidate
+        sdram_read(4,x"bc55");   -- array read #2: must see the new value
+        sdram_read(6,x"f0de");   -- cache hit on the refetched line
+        sdram_read(64*1024*1024+5,x"0202");
+        -- A write to a different line must not invalidate the cache
+        sdram_write(1024,x"77");
+        sdram_read(2,x"7856");   -- still a cache hit
+        sdram_read(64*1024*1024+5,x"0202");
+
+      elsif run("Write-combining cache merges writes and flushes correctly") then
+        wait_for_sdram_ready;
+
+        -- Fill line 0: all eight writes merge into the write cache
+        sdram_write(0,x"12");
+        sdram_write(1,x"34");
+        sdram_write(2,x"56");
+        sdram_write(3,x"78");
+        sdram_write(4,x"9a");
+        sdram_write(5,x"bc");
+        sdram_write(6,x"de");
+        sdram_write(7,x"f0");
+        -- write_jobs counts flushes: none have happened yet
+        sdram_read(64*1024*1024+6,x"0000");
+
+        -- A write to a different line misses the dirty line and flushes it
+        sdram_write(64,x"77");
+        sdram_write(65,x"88");   -- merges into the newly adopted line
+        sdram_read(64*1024*1024+6,x"0101");
+
+        -- Line 0 must have been written back in full (all four words)
+        sdram_read(0,x"3412");
+        sdram_read(2,x"7856");
+        sdram_read(4,x"bc9a");
+        sdram_read(6,x"f0de");
+
+        -- Reading the still-dirty line flushes it first (partial line:
+        -- only word 0 is dirty, words 1-3 are skipped)
+        sdram_read(64,x"8877");
+        sdram_read(64*1024*1024+6,x"0202");
 
       end if;
     end loop;

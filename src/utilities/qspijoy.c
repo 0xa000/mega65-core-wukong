@@ -771,7 +771,9 @@ models_type models[] = {
   { 0x40, "Nexys4" },
   { 0x41, "Nexys4DDR" },
   { 0x42, "Nexys4DDR-widget" },
-  { 0xFD, "QMTECH Wukong A100T" },
+  { 0x63, "QMTECH Wukong V1" },
+  { 0x64, "QMTECH Wukong V2" },
+  { 0x65, "QMTECH Wukong V3" },
   { 0xFE, "Simulation" } };
 // clang-format on
 
